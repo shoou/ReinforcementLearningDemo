@@ -2,5 +2,6 @@
 *.pyc
 **/output/**
 *.DS_Store
-actor_critic_output/*
-ppo_output/**
+**/actor_critic_output/**
+**/ppo_output/**
+**/dqn_output/**

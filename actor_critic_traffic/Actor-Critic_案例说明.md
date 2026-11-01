@@ -2,9 +2,9 @@
 
 一场大型演唱会刚结束，东西向的车流突然增加。半小时后，南北向的通勤车流又成为主角。路口信号灯每分钟都要决定：**继续放行当前方向，还是切换方向？** 切换时要经过黄灯和全红过渡，车辆通行能力会下降。目标是让所有车辆的累计等待时间尽量短。
 
-这是一个独立的 PyTorch 教学案例，不依赖本目录的 Atari 训练脚本。车流由带随机性的泊松分布模拟，不是实际路口数据；它适合讲解算法和做可重复的课堂实验，不应用于真实交通信号控制。
-
 ## 运行
+
+以下命令在 `actor_critic_traffic/` 目录执行。
 
 需要 Python 3.9+，以及 `torch`、`numpy`、`matplotlib`、`Pillow`：
 
@@ -25,6 +25,18 @@ python3 actor_critic_traffic.py
 
 可用 `python3 actor_critic_traffic.py --episodes 1600 --seed 42 --output my_run` 改变训练次数、随机种子和输出位置。强化学习有随机性，不同设置的结果会有波动。
 
+## 交互式路口展示
+
+训练完成后，运行本地展示界面：
+
+```bash
+python3 actor_critic_traffic_web.py
+```
+
+在浏览器打开 `http://127.0.0.1:8765/`。页面会读取 `actor_critic_output/actor_critic_model.pt`，展示模型和固定配时在**同一组车流**下的逐分钟表现。可以播放、暂停、单步前后移动、拖动时间轴、调整播放速度，也可以输入新的随机种子生成场景。页面显示绿灯方向、两向排队、模型选择概率、累计等待和排队变化曲线。
+
+如果模型保存在其他位置，可运行 `python3 actor_critic_traffic_web.py --model my_run/actor_critic_model.pt --port 8766`。展示界面只加载已有权重，不会重新训练；累计等待降幅是当前场景的结果，可能随随机种子改变。
+
 ## 一分钟里发生了什么
 
 | 元素 | 案例中的含义 |
@@ -42,7 +54,7 @@ python3 actor_critic_traffic.py
 ```mermaid
 flowchart LR
     S[观察路口状态 s] --> A[Actor<br/>输出两个方向的概率]
-    S --> C[Critic<br/>估计当前状态价值 V(s)]
+    S --> C[ Critic 估计当前状态价值 V ]
     A --> E[抽样动作并切换或保持绿灯]
     E --> R[得到奖励 r 和下一状态 s']
     R --> D[计算 TD 误差与 GAE 优势]

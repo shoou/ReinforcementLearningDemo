@@ -15,17 +15,23 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 # 地图坐标采用（行，列）：左上角是 (0, 0)，向下行号增大，向右列号增大。
-SIZE = 5
+SIZE = 32
 START = (0, 0)
-GOAL = (4, 4)
-WALLS = {(1, 1), (1, 2), (1, 3), (3, 1), (3, 2), (3, 3)}
+GOAL = (SIZE - 1, SIZE - 1)
+# 五道横墙的缺口左右交替，形成必须绕行的路线；起点和终点保持畅通。
+WALLS = {
+    (row, col)
+    for index, row in enumerate(range(5, SIZE - 1, 6))
+    for col in range(SIZE)
+    if col not in (range(2, 8) if index % 2 == 0 else range(SIZE - 8, SIZE - 2))
+}
 ACTIONS = ((-1, 0), (1, 0), (0, -1), (0, 1))  # 上、下、左、右
 
 
 class GridWorld:
     """固定地图的寻路环境，接口仿照强化学习常见的 reset/step。"""
 
-    def __init__(self, max_steps: int = 30):
+    def __init__(self, max_steps: int = SIZE * 8):
         self.max_steps = max_steps
         self.reset()
 
@@ -36,7 +42,7 @@ class GridWorld:
         return self.state()
 
     def state(self) -> np.ndarray:
-        # 固定地图中位置的 one-hot 编码；网络输入维度为 25。
+        # 固定地图中位置的 one-hot 编码；网络输入维度随地图大小变化。
         state = np.zeros(SIZE * SIZE, dtype=np.float32)
         state[self.position[0] * SIZE + self.position[1]] = 1.0
         return state
@@ -59,7 +65,7 @@ class GridWorld:
 
 
 class QNetwork(torch.nn.Module):
-    """把 25 维位置状态映射为 4 个动作的 Q 值。"""
+    """把位置状态映射为 4 个动作的 Q 值。"""
 
     def __init__(self):
         super().__init__()
@@ -109,7 +115,7 @@ def learn(
         best_next = target(next_states).max(dim=1).values
         # 终止状态没有未来回报。
         target_q = rewards + gamma * (1.0 - dones) * best_next
-    # Huber 损失比平方误差对偶发的大误差更稳健。
+    # L1平滑损失比平方误差对偶发的大误差更稳健。
     loss = torch.nn.functional.smooth_l1_loss(predicted, target_q)
     optimizer.zero_grad()
     loss.backward()
@@ -190,7 +196,7 @@ def evaluate(network: QNetwork) -> tuple[list[tuple[int, int]], float, bool]:
 
 def draw_frame(route: list[tuple[int, int]], step: int) -> Image.Image:
     """把路线的第 step 步画成一张图片，供静态图和 GIF 复用。"""
-    cell, margin, heading = 80, 18, 48
+    cell, margin, heading = max(20, 400 // SIZE), 18, 48
     image = Image.new("RGB", (SIZE * cell + 2 * margin, SIZE * cell + 2 * margin + heading), "#f7fafc")
     draw = ImageDraw.Draw(image)
     font = ImageFont.load_default()
@@ -213,11 +219,13 @@ def draw_frame(route: list[tuple[int, int]], step: int) -> Image.Image:
     for index, (row, col) in enumerate(route[:step]):
         x = margin + col * cell + cell // 2
         y = margin + heading + row * cell + cell // 2
-        draw.ellipse((x - 5, y - 5, x + 5, y + 5), fill="#94a3b8")
+        radius = max(2, cell // 8)
+        draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill="#94a3b8")
     row, col = route[step]
     x = margin + col * cell + cell // 2
     y = margin + heading + row * cell + cell // 2
-    draw.ellipse((x - 20, y - 20, x + 20, y + 20), fill="#2563eb", outline="white", width=3)
+    radius = max(6, cell // 3)
+    draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill="#2563eb", outline="white", width=2)
     draw.text((x - 4, y - 5), "A", fill="white", font=font)
     return image
 
@@ -264,7 +272,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="DQN 网格寻路教学案例")
     parser.add_argument("--episodes", type=int, default=500, help="训练回合数，默认 500")
     parser.add_argument("--seed", type=int, default=7, help="随机种子")
-    parser.add_argument("--output", type=Path, default=Path("dqn_output1"), help="输出目录")
+    parser.add_argument("--output", type=Path, default=Path("dqn_output"), help="输出目录")
     args = parser.parse_args()
     if args.episodes < 1:
         parser.error("--episodes 必须大于 0")

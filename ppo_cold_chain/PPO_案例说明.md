@@ -6,6 +6,8 @@
 
 ## 运行
 
+以下命令在 `ppo_cold_chain/` 目录执行。
+
 需要 Python 3.9+、`numpy`、`torch`、`matplotlib`：
 
 ```bash

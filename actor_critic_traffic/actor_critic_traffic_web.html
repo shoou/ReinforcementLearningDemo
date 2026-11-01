@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>智能信号灯 · Actor-Critic 路口模拟</title>
+  <style>
+    :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #17243a; background: #edf2f8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    .shell { max-width: 1440px; margin: auto; padding: 30px 28px 42px; }
+    .hero { display: flex; justify-content: space-between; gap: 24px; align-items: end; margin-bottom: 22px; }
+    .eyebrow { color: #2563eb; font-size: 12px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+    h1 { margin: 8px 0 8px; font-size: clamp(28px, 3vw, 42px); line-height: 1.13; letter-spacing: -.035em; }
+    .subtitle { margin: 0; color: #617086; line-height: 1.6; }
+    .pill { background: #e7f0ff; color: #2457ad; padding: 9px 13px; border-radius: 999px; font-size: 13px; white-space: nowrap; }
+    .card { background: #fff; border: 1px solid #dce5f0; border-radius: 20px; box-shadow: 0 10px 30px #1d35530d; }
+    .toolbar { padding: 18px 20px; display: flex; align-items: end; flex-wrap: wrap; gap: 14px; margin-bottom: 20px; }
+    .field { display: flex; flex-direction: column; gap: 6px; color: #64748b; font-size: 12px; font-weight: 700; }
+    .field input, .field select { height: 40px; border: 1px solid #ccd8e7; border-radius: 10px; padding: 0 11px; background: #fff; color: #17243a; min-width: 130px; }
+    .field input:focus, .field select:focus { outline: 2px solid #93c5fd; border-color: #60a5fa; }
+    .button { height: 40px; padding: 0 17px; border: 1px solid #cbd8e8; background: #fff; border-radius: 10px; color: #253954; font-weight: 700; }
+    .button:hover { background: #f1f6fd; }
+    .button.primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+    .button.primary:hover { background: #1d4ed8; }
+    .button:disabled { opacity: .45; cursor: default; }
+    .toolbar-note { margin-left: auto; color: #6b7a8d; font-size: 12px; max-width: 260px; line-height: 1.5; }
+    .timeline { padding: 18px 21px 20px; margin-bottom: 20px; }
+    .timeline-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+    .timeline strong { font-size: 17px; }
+    .timeline span { color: #64748b; font-size: 13px; }
+    input[type=range] { width: 100%; accent-color: #2563eb; cursor: pointer; }
+    .ticks { display: flex; justify-content: space-between; margin-top: 7px; color: #8694a7; font-size: 11px; }
+    .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+    .metric { padding: 17px 19px; }
+    .metric .label { color: #6b7a8d; font-size: 12px; font-weight: 700; }
+    .metric .number { font-size: clamp(22px, 2.6vw, 30px); font-weight: 800; letter-spacing: -.03em; margin: 6px 0 2px; }
+    .metric small { color: #7b8ba0; }
+    .metric.blue .number { color: #2563eb; }
+    .metric.orange .number { color: #d97706; }
+    .metric.green .number { color: #15803d; }
+    .comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+    .strategy { padding: 20px; overflow: hidden; }
+    .strategy-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 13px; }
+    .strategy h2 { margin: 0; font-size: 20px; }
+    .strategy-head .tag { font-size: 11px; font-weight: 800; border-radius: 999px; padding: 6px 9px; }
+    .learned .tag { background: #e8f0ff; color: #2563eb; }
+    .fixed .tag { background: #fff3dc; color: #b5680a; }
+    .strategy-desc { margin: 0 0 18px; color: #718096; font-size: 13px; min-height: 18px; }
+    .intersection { position: relative; height: 260px; border-radius: 17px; overflow: hidden; background: #e7f0e8; border: 1px solid #d5e5d8; }
+    .road-h, .road-v { position: absolute; background: #394a5a; }
+    .road-h { left: 0; right: 0; height: 90px; top: calc(50% - 45px); }
+    .road-v { top: 0; bottom: 0; width: 104px; left: calc(50% - 52px); }
+    .road-h::before, .road-v::before { content: ""; position: absolute; opacity: .5; }
+    .road-h::before { left: 0; right: 0; top: 50%; border-top: 2px dashed #dce5e6; }
+    .road-v::before { top: 0; bottom: 0; left: 50%; border-left: 2px dashed #dce5e6; }
+    .cross { position: absolute; left: calc(50% - 52px); top: calc(50% - 45px); width: 104px; height: 90px; background: #394a5a; z-index: 1; }
+    .light { position: absolute; z-index: 2; background: #102131; color: #fff; padding: 5px 9px; border-radius: 8px; font-size: 11px; font-weight: 800; white-space: nowrap; box-shadow: 0 3px 9px #15283b44; }
+    .light.ns { top: 14px; left: calc(50% + 63px); }
+    .light.ew { top: calc(50% + 52px); left: 12px; }
+    .light .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; background: #ef4444; }
+    .light.go .dot { background: #22c55e; box-shadow: 0 0 7px #22c55e; }
+    .queue-badge { position: absolute; z-index: 2; padding: 6px 9px; border-radius: 8px; background: #ffffffed; color: #263e55; font-size: 12px; font-weight: 800; box-shadow: 0 3px 10px #17243a24; }
+    .queue-badge.ns { left: calc(50% - 94px); top: 22px; }
+    .queue-badge.ew { right: 16px; top: calc(50% - 75px); }
+    .cars { position: absolute; z-index: 2; display: flex; flex-wrap: wrap; gap: 3px; max-width: 120px; }
+    .cars.ns { width: 24px; left: calc(50% - 37px); top: 9px; flex-direction: column; max-height: 77px; }
+    .cars.ew { right: 12px; top: calc(50% + 10px); max-width: 130px; }
+    .car { width: 13px; height: 8px; border-radius: 2px; background: #fbbf24; border: 1px solid #e59c12; }
+    .cars.ns .car { width: 8px; height: 13px; }
+    .center-mark { position: absolute; z-index: 3; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 48px; height: 48px; display: grid; place-items: center; border-radius: 50%; background: #fff; font-size: 22px; box-shadow: 0 3px 12px #0003; }
+    .queue-bars { margin-top: 17px; display: grid; gap: 11px; }
+    .bar-row { display: grid; grid-template-columns: 60px 1fr 45px; gap: 9px; align-items: center; font-size: 12px; color: #637287; }
+    .track { height: 9px; border-radius: 999px; background: #e7edf5; overflow: hidden; }
+    .fill { height: 100%; width: 0; background: #60a5fa; border-radius: 999px; transition: width .2s; }
+    .fixed .fill { background: #fbbf24; }
+    .bar-row b { color: #26384f; text-align: right; }
+    .details { border-top: 1px solid #edf1f6; margin-top: 17px; padding-top: 16px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .details .detail-label { color: #8491a3; font-size: 11px; margin-bottom: 4px; }
+    .details strong { font-size: 17px; }
+    .model-box { margin-top: 14px; padding: 12px 14px; border-radius: 10px; background: #f2f6fd; color: #48617f; font-size: 12px; line-height: 1.5; min-height: 44px; }
+    .fixed .model-box { background: #fff8eb; color: #85632f; }
+    .chart-card { padding: 21px; margin-top: 20px; }
+    .chart-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; margin-bottom: 10px; }
+    .chart-head h2 { margin: 0; font-size: 18px; }
+    .legend { display: flex; gap: 14px; color: #708199; font-size: 12px; }
+    .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; }
+    #queue-chart { width: 100%; height: 210px; display: block; }
+    .footnote { color: #728096; font-size: 12px; line-height: 1.6; margin: 16px 3px 0; }
+    #error { color: #b91c1c; margin: 0 0 14px; min-height: 0; font-size: 13px; }
+    @media (max-width: 900px) { .summary { grid-template-columns: repeat(2, 1fr); } .comparison { grid-template-columns: 1fr; } .toolbar-note { margin-left: 0; } }
+    @media (max-width: 550px) { .shell { padding: 18px 13px 28px; } .hero { align-items: start; flex-direction: column; } .toolbar { gap: 9px; } .toolbar-note { flex-basis: 100%; } .summary { gap: 9px; } .metric { padding: 13px; } .strategy { padding: 14px; } .chart-head { flex-direction: column; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div><div class="eyebrow">Reinforcement Learning Lab</div><h1>智能信号灯 · 路口模拟</h1><p class="subtitle">同一组随机车流，逐分钟观察 Actor-Critic 与固定配时如何控制绿灯。</p></div>
+      <div class="pill">60 分钟模拟 · 每步 1 分钟</div>
+    </header>
+
+    <section class="toolbar card" aria-label="模拟控制">
+      <label class="field">车流随机种子<input id="seed" type="number" min="0" max="4294967295" step="1" value="100000"></label>
+      <button class="button" id="load">生成车流</button>
+      <button class="button primary" id="play">▶ 播放</button>
+      <button class="button" id="previous" aria-label="上一分钟">← 上一步</button>
+      <button class="button" id="next" aria-label="下一分钟">下一步 →</button>
+      <label class="field">播放速度<select id="speed"><option value="900">慢速</option><option value="500" selected>正常</option><option value="180">快速</option></select></label>
+      <div class="toolbar-note">更换种子会生成新的到达序列；两种策略始终使用相同车流。</div>
+    </section>
+    <p id="error" role="alert"></p>
+
+    <section class="timeline card">
+      <div class="timeline-top"><strong id="time-label">第 0 / 60 分钟</strong><span id="period-label">等待加载模型</span></div>
+      <input id="minute" type="range" min="0" max="60" value="0" aria-label="模拟分钟">
+      <div class="ticks"><span>开始</span><span>30 分钟 · 车流转向</span><span>结束</span></div>
+    </section>
+
+    <section class="summary" aria-label="当前累计指标">
+      <div class="metric card blue"><div class="label">Actor-Critic 累计等待</div><div class="number" id="learned-wait">0</div><small>车辆·分钟</small></div>
+      <div class="metric card orange"><div class="label">固定配时累计等待</div><div class="number" id="fixed-wait">0</div><small>车辆·分钟</small></div>
+      <div class="metric card green"><div class="label">等待改善</div><div class="number" id="improvement">—</div><small>相对固定配时，当前累计值</small></div>
+      <div class="metric card"><div class="label">本分钟到达</div><div class="number" id="arrivals">0 / 0</div><small>南北向 / 东西向，辆</small></div>
+    </section>
+
+    <section class="comparison" aria-label="策略对比">
+      <article class="strategy card learned" id="learned-panel">
+        <div class="strategy-head"><h2>Actor-Critic 模型</h2><span class="tag">已加载训练权重</span></div>
+        <p class="strategy-desc">根据当前排队、信号灯相位和时间选择动作</p>
+        <div class="intersection" aria-label="Actor-Critic 路口状态">
+          <div class="road-h"></div><div class="road-v"></div><div class="cross"></div>
+          <div class="light ns" data-light="0"><span class="dot"></span>南北方向</div>
+          <div class="light ew" data-light="1"><span class="dot"></span>东西方向</div>
+          <div class="queue-badge ns" data-badge="0">0 辆</div><div class="queue-badge ew" data-badge="1">0 辆</div>
+          <div class="cars ns" data-cars="0"></div><div class="cars ew" data-cars="1"></div>
+          <div class="center-mark">🚦</div>
+        </div>
+        <div class="queue-bars"><div class="bar-row"><span>南北向</span><div class="track"><div class="fill" data-bar="0"></div></div><b data-count="0">0 辆</b></div><div class="bar-row"><span>东西向</span><div class="track"><div class="fill" data-bar="1"></div></div><b data-count="1">0 辆</b></div></div>
+        <div class="details"><div><div class="detail-label">本分钟放行</div><strong data-passed>0 辆</strong></div><div><div class="detail-label">累计放行</div><strong data-total-passed>0 辆</strong></div><div><div class="detail-label">累计切换</div><strong data-switches>0 次</strong></div></div>
+        <div class="model-box" data-explanation>选择时间轴上的一分钟，查看模型动作及概率。</div>
+      </article>
+
+      <article class="strategy card fixed" id="fixed-panel">
+        <div class="strategy-head"><h2>固定配时</h2><span class="tag">每 5 分钟切换</span></div>
+        <p class="strategy-desc">不观察队列，按预设时间交替放行两个方向</p>
+        <div class="intersection" aria-label="固定配时路口状态">
+          <div class="road-h"></div><div class="road-v"></div><div class="cross"></div>
+          <div class="light ns" data-light="0"><span class="dot"></span>南北方向</div>
+          <div class="light ew" data-light="1"><span class="dot"></span>东西方向</div>
+          <div class="queue-badge ns" data-badge="0">0 辆</div><div class="queue-badge ew" data-badge="1">0 辆</div>
+          <div class="cars ns" data-cars="0"></div><div class="cars ew" data-cars="1"></div>
+          <div class="center-mark">🚦</div>
+        </div>
+        <div class="queue-bars"><div class="bar-row"><span>南北向</span><div class="track"><div class="fill" data-bar="0"></div></div><b data-count="0">0 辆</b></div><div class="bar-row"><span>东西向</span><div class="track"><div class="fill" data-bar="1"></div></div><b data-count="1">0 辆</b></div></div>
+        <div class="details"><div><div class="detail-label">本分钟放行</div><strong data-passed>0 辆</strong></div><div><div class="detail-label">累计放行</div><strong data-total-passed>0 辆</strong></div><div><div class="detail-label">累计切换</div><strong data-switches>0 次</strong></div></div>
+        <div class="model-box" data-explanation>第 1～5 分钟先放行南北向，此后每 5 分钟交替。</div>
+      </article>
+    </section>
+
+    <section class="chart-card card"><div class="chart-head"><h2>两种策略的排队车辆数</h2><div class="legend"><span><i style="background:#2563eb"></i>Actor-Critic</span><span><i style="background:#e99a16"></i>固定配时</span></div></div><svg id="queue-chart" viewBox="0 0 1000 210" role="img" aria-label="每分钟排队车辆数对比折线图"></svg></section>
+    <p class="footnote">模拟规则：保持绿灯每分钟最多放行 5 辆；切换方向当分钟最多放行 2 辆。等待改善仅针对当前随机场景，与真实道路效果无关。</p>
+  </main>
+  <script>
+    const $ = (selector, root = document) => root.querySelector(selector);
+    const state = { data: null, minute: 0, timer: null };
+    const names = ["南北向", "东西向"];
+
+    function stop() {
+      if (state.timer) clearInterval(state.timer);
+      state.timer = null;
+      $("#play").textContent = "▶ 播放";
+    }
+
+    function renderPanel(root, record, initial) {
+      const queues = record ? record.queues : [0, 0];
+      const action = record ? record.action : 0;
+      for (let i = 0; i < 2; i++) {
+        root.querySelector(`[data-light="${i}"]`).classList.toggle("go", action === i);
+        root.querySelector(`[data-badge="${i}"]`).textContent = `${queues[i]} 辆`;
+        root.querySelector(`[data-count="${i}"]`).textContent = `${queues[i]} 辆`;
+        root.querySelector(`[data-bar="${i}"]`).style.width = `${Math.min(100, queues[i] / 40 * 100)}%`;
+        const cars = root.querySelector(`[data-cars="${i}"]`);
+        cars.replaceChildren(...Array.from({ length: Math.min(queues[i], 12) }, () => {
+          const car = document.createElement("span"); car.className = "car"; return car;
+        }));
+      }
+      $("[data-passed]", root).textContent = `${record?.passed ?? 0} 辆`;
+      $("[data-total-passed]", root).textContent = `${record?.total_passed ?? 0} 辆`;
+      $("[data-switches]", root).textContent = `${record?.switches ?? 0} 次`;
+      if (root.id === "learned-panel") {
+        $("[data-explanation]", root).textContent = initial
+          ? "选择时间轴上的一分钟，查看模型动作及概率。"
+          : `模型选择${names[action]}${record.switched ? "（本分钟切换，通行能力减半）" : "（保持绿灯）"}。选择概率：南北 ${(record.probabilities[0] * 100).toFixed(1)}%，东西 ${(record.probabilities[1] * 100).toFixed(1)}%。`;
+      } else {
+        $("[data-explanation]", root).textContent = initial
+          ? "第 1～5 分钟先放行南北向，此后每 5 分钟交替。"
+          : `按固定时间表放行${names[action]}${record.switched ? "，本分钟发生切换" : ""}。`;
+      }
+    }
+
+    function renderChart(data, minute) {
+      const svg = $("#queue-chart");
+      const max = Math.max(10, ...data.learned.map(r => r.waiting), ...data.fixed.map(r => r.waiting));
+      const x = m => 45 + m / 60 * 930;
+      const y = v => 180 - v / max * 155;
+      const path = rows => rows.map((r, i) => `${i ? "L" : "M"}${x(r.minute).toFixed(1)},${y(r.waiting).toFixed(1)}`).join(" ");
+      const escaped = [0, Math.ceil(max / 2), max].map(v => `<text x="38" y="${y(v) + 4}" text-anchor="end" fill="#8491a3" font-size="11">${v}</text><line x1="45" x2="975" y1="${y(v)}" y2="${y(v)}" stroke="#e6edf5"/>`).join("");
+      svg.innerHTML = `${escaped}<line x1="510" x2="510" y1="25" y2="180" stroke="#a5b4c7" stroke-dasharray="4 4"/><path d="${path(data.fixed)}" fill="none" stroke="#e99a16" stroke-width="2.7"/><path d="${path(data.learned)}" fill="none" stroke="#2563eb" stroke-width="2.7"/><line x1="${x(minute)}" x2="${x(minute)}" y1="25" y2="180" stroke="#334155" stroke-width="1.5"/><text x="45" y="202" fill="#8491a3" font-size="11">1 分钟</text><text x="510" y="202" text-anchor="middle" fill="#8491a3" font-size="11">30</text><text x="975" y="202" text-anchor="end" fill="#8491a3" font-size="11">60 分钟</text>`;
+    }
+
+    function render() {
+      if (!state.data) return;
+      const m = state.minute;
+      const learned = m ? state.data.learned[m - 1] : null;
+      const fixed = m ? state.data.fixed[m - 1] : null;
+      $("#minute").value = m;
+      $("#time-label").textContent = `第 ${m} / 60 分钟`;
+      $("#period-label").textContent = m === 0 ? "模拟尚未开始" : m <= 30 ? "前半段：东西向车流较多" : "后半段：南北向车流较多";
+      $("#learned-wait").textContent = (learned?.total_wait ?? 0).toLocaleString();
+      $("#fixed-wait").textContent = (fixed?.total_wait ?? 0).toLocaleString();
+      $("#improvement").textContent = fixed?.total_wait ? `${((fixed.total_wait - learned.total_wait) / fixed.total_wait * 100).toFixed(1)}%` : "—";
+      $("#arrivals").textContent = learned ? `${learned.arrivals[0]} / ${learned.arrivals[1]}` : "0 / 0";
+      $("#previous").disabled = m === 0;
+      $("#next").disabled = m === 60;
+      renderPanel($("#learned-panel"), learned, m === 0);
+      renderPanel($("#fixed-panel"), fixed, m === 0);
+      renderChart(state.data, m);
+    }
+
+    async function load() {
+      stop();
+      const seed = $("#seed").value.trim();
+      if (!/^\d+$/.test(seed) || Number(seed) > 4294967295) {
+        $("#error").textContent = "请输入 0 到 4294967295 之间的整数随机种子。";
+        return;
+      }
+      $("#error").textContent = "";
+      $("#load").disabled = true;
+      $("#load").textContent = "生成中…";
+      try {
+        const response = await fetch(`/api/simulate?seed=${encodeURIComponent(seed)}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "模拟失败");
+        state.data = data;
+        state.minute = 0;
+        render();
+      } catch (error) {
+        $("#error").textContent = `无法生成车流：${error.message}`;
+      } finally {
+        $("#load").disabled = false;
+        $("#load").textContent = "生成车流";
+      }
+    }
+
+    function play() {
+      if (!state.data) return;
+      if (state.timer) { stop(); return; }
+      if (state.minute === 60) state.minute = 0;
+      $("#play").textContent = "Ⅱ 暂停";
+      state.timer = setInterval(() => {
+        state.minute++;
+        render();
+        if (state.minute >= 60) stop();
+      }, Number($("#speed").value));
+    }
+
+    $("#load").addEventListener("click", load);
+    $("#seed").addEventListener("keydown", event => { if (event.key === "Enter") load(); });
+    $("#play").addEventListener("click", play);
+    $("#previous").addEventListener("click", () => { stop(); state.minute = Math.max(0, state.minute - 1); render(); });
+    $("#next").addEventListener("click", () => { stop(); state.minute = Math.min(60, state.minute + 1); render(); });
+    $("#minute").addEventListener("input", event => { stop(); state.minute = Number(event.target.value); render(); });
+    $("#speed").addEventListener("change", () => { if (state.timer) { stop(); play(); } });
+    load();
+  </script>
+</body>
+</html>
