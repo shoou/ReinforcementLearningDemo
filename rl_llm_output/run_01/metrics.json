@@ -1,0 +1,442 @@
+{
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "config": {
+    "model": "Qwen/Qwen2.5-0.5B-Instruct",
+    "export_data": null,
+    "adapter": null,
+    "validation_only": false,
+    "output": "rl_llm_output/run_01",
+    "steps": 128,
+    "batch_size": 4,
+    "train_size": 512,
+    "eval_size": 128,
+    "lr": 0.0001,
+    "entropy": 0.01,
+    "rank": 4,
+    "eval_every": 16,
+    "threads": 4,
+    "seed": 42
+  },
+  "baseline_validation": {
+    "accuracy": 0.25,
+    "mean_reward": -0.75,
+    "risky_auto_decisions": 32,
+    "n": 128,
+    "confusion": {
+      "A": {
+        "A": 0,
+        "B": 0,
+        "C": 32,
+        "D": 0
+      },
+      "B": {
+        "A": 0,
+        "B": 0,
+        "C": 32,
+        "D": 0
+      },
+      "C": {
+        "A": 0,
+        "B": 0,
+        "C": 32,
+        "D": 0
+      },
+      "D": {
+        "A": 0,
+        "B": 0,
+        "C": 32,
+        "D": 0
+      }
+    }
+  },
+  "final_validation": {
+    "accuracy": 0.6875,
+    "mean_reward": 0.3671875,
+    "risky_auto_decisions": 1,
+    "n": 128,
+    "confusion": {
+      "A": {
+        "A": 27,
+        "B": 0,
+        "C": 2,
+        "D": 3
+      },
+      "B": {
+        "A": 5,
+        "B": 26,
+        "C": 1,
+        "D": 0
+      },
+      "C": {
+        "A": 23,
+        "B": 4,
+        "C": 4,
+        "D": 1
+      },
+      "D": {
+        "A": 0,
+        "B": 0,
+        "C": 1,
+        "D": 31
+      }
+    }
+  },
+  "final_test": {
+    "accuracy": 0.59375,
+    "mean_reward": 0.1484375,
+    "risky_auto_decisions": 5,
+    "n": 128,
+    "confusion": {
+      "A": {
+        "A": 29,
+        "B": 0,
+        "C": 0,
+        "D": 3
+      },
+      "B": {
+        "A": 13,
+        "B": 19,
+        "C": 0,
+        "D": 0
+      },
+      "C": {
+        "A": 22,
+        "B": 8,
+        "C": 1,
+        "D": 1
+      },
+      "D": {
+        "A": 5,
+        "B": 0,
+        "C": 0,
+        "D": 27
+      }
+    }
+  },
+  "history": [
+    {
+      "step": 1,
+      "loss": 0.5402905941009521,
+      "validation": {
+        "accuracy": 0.25,
+        "mean_reward": -0.75,
+        "risky_auto_decisions": 32,
+        "n": 128,
+        "confusion": {
+          "A": {
+            "A": 0,
+            "B": 0,
+            "C": 32,
+            "D": 0
+          },
+          "B": {
+            "A": 0,
+            "B": 0,
+            "C": 32,
+            "D": 0
+          },
+          "C": {
+            "A": 0,
+            "B": 0,
+            "C": 32,
+            "D": 0
+          },
+          "D": {
+            "A": 0,
+            "B": 0,
+            "C": 32,
+            "D": 0
+          }
+        }
+      }
+    },
+    {
+      "step": 16,
+      "loss": 0.7292503118515015,
+      "validation": {
+        "accuracy": 0.328125,
+        "mean_reward": -0.359375,
+        "risky_auto_decisions": 2,
+        "n": 128,
+        "confusion": {
+          "A": {
+            "A": 0,
+            "B": 0,
+            "C": 9,
+            "D": 23
+          },
+          "B": {
+            "A": 0,
+            "B": 0,
+            "C": 19,
+            "D": 13
+          },
+          "C": {
+            "A": 0,
+            "B": 0,
+            "C": 12,
+            "D": 20
+          },
+          "D": {
+            "A": 0,
+            "B": 0,
+            "C": 2,
+            "D": 30
+          }
+        }
+      }
+    },
+    {
+      "step": 32,
+      "loss": -0.059787023812532425,
+      "validation": {
+        "accuracy": 0.2578125,
+        "mean_reward": -0.484375,
+        "risky_auto_decisions": 0,
+        "n": 128,
+        "confusion": {
+          "A": {
+            "A": 0,
+            "B": 0,
+            "C": 0,
+            "D": 32
+          },
+          "B": {
+            "A": 1,
+            "B": 0,
+            "C": 0,
+            "D": 31
+          },
+          "C": {
+            "A": 0,
+            "B": 0,
+            "C": 1,
+            "D": 31
+          },
+          "D": {
+            "A": 0,
+            "B": 0,
+            "C": 0,
+            "D": 32
+          }
+        }
+      }
+    },
+    {
+      "step": 48,
+      "loss": 0.1544952094554901,
+      "validation": {
+        "accuracy": 0.40625,
+        "mean_reward": -0.296875,
+        "risky_auto_decisions": 14,
+        "n": 128,
+        "confusion": {
+          "A": {
+            "A": 15,
+            "B": 0,
+            "C": 17,
+            "D": 0
+          },
+          "B": {
+            "A": 7,
+            "B": 1,
+            "C": 24,
+            "D": 0
+          },
+          "C": {
+            "A": 14,
+            "B": 0,
+            "C": 18,
+            "D": 0
+          },
+          "D": {
+            "A": 0,
+            "B": 0,
+            "C": 14,
+            "D": 18
+          }
+        }
+      }
+    },
+    {
+      "step": 64,
+      "loss": 0.6000069975852966,
+      "validation": {
+        "accuracy": 0.59375,
+        "mean_reward": 0.1875,
+        "risky_auto_decisions": 0,
+        "n": 128,
+        "confusion": {
+          "A": {
+            "A": 16,
+            "B": 8,
+            "C": 0,
+            "D": 8
+          },
+          "B": {
+            "A": 3,
+            "B": 28,
+            "C": 0,
+            "D": 1
+          },
+          "C": {
+            "A": 15,
+            "B": 14,
+            "C": 0,
+            "D": 3
+          },
+          "D": {
+            "A": 0,
+            "B": 0,
+            "C": 0,
+            "D": 32
+          }
+        }
+      }
+    },
+    {
+      "step": 80,
+      "loss": 0.20073851943016052,
+      "validation": {
+        "accuracy": 0.578125,
+        "mean_reward": 0.15625,
+        "risky_auto_decisions": 0,
+        "n": 128,
+        "confusion": {
+          "A": {
+            "A": 30,
+            "B": 1,
+            "C": 0,
+            "D": 1
+          },
+          "B": {
+            "A": 20,
+            "B": 12,
+            "C": 0,
+            "D": 0
+          },
+          "C": {
+            "A": 28,
+            "B": 4,
+            "C": 0,
+            "D": 0
+          },
+          "D": {
+            "A": 0,
+            "B": 0,
+            "C": 0,
+            "D": 32
+          }
+        }
+      }
+    },
+    {
+      "step": 96,
+      "loss": -0.030006196349859238,
+      "validation": {
+        "accuracy": 0.546875,
+        "mean_reward": 0.09375,
+        "risky_auto_decisions": 0,
+        "n": 128,
+        "confusion": {
+          "A": {
+            "A": 7,
+            "B": 21,
+            "C": 0,
+            "D": 4
+          },
+          "B": {
+            "A": 1,
+            "B": 31,
+            "C": 0,
+            "D": 0
+          },
+          "C": {
+            "A": 7,
+            "B": 25,
+            "C": 0,
+            "D": 0
+          },
+          "D": {
+            "A": 0,
+            "B": 0,
+            "C": 0,
+            "D": 32
+          }
+        }
+      }
+    },
+    {
+      "step": 112,
+      "loss": -0.9267470240592957,
+      "validation": {
+        "accuracy": 0.671875,
+        "mean_reward": 0.328125,
+        "risky_auto_decisions": 2,
+        "n": 128,
+        "confusion": {
+          "A": {
+            "A": 26,
+            "B": 3,
+            "C": 1,
+            "D": 2
+          },
+          "B": {
+            "A": 4,
+            "B": 27,
+            "C": 1,
+            "D": 0
+          },
+          "C": {
+            "A": 21,
+            "B": 8,
+            "C": 3,
+            "D": 0
+          },
+          "D": {
+            "A": 0,
+            "B": 0,
+            "C": 2,
+            "D": 30
+          }
+        }
+      }
+    },
+    {
+      "step": 128,
+      "loss": 0.04856358841061592,
+      "validation": {
+        "accuracy": 0.6875,
+        "mean_reward": 0.3671875,
+        "risky_auto_decisions": 1,
+        "n": 128,
+        "confusion": {
+          "A": {
+            "A": 27,
+            "B": 0,
+            "C": 2,
+            "D": 3
+          },
+          "B": {
+            "A": 5,
+            "B": 26,
+            "C": 1,
+            "D": 0
+          },
+          "C": {
+            "A": 23,
+            "B": 4,
+            "C": 4,
+            "D": 1
+          },
+          "D": {
+            "A": 0,
+            "B": 0,
+            "C": 1,
+            "D": 31
+          }
+        }
+      }
+    }
+  ]
+}

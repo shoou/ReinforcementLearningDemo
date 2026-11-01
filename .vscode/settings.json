@@ -1,0 +1,58 @@
+{
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/node_modules/**": true,
+    "**/dist": true,
+    "**/dist/**": true,
+    "**/.vite": true,
+    "**/.vite/**": true,
+    "**/.nuxt": true,
+    "**/.nuxt/**": true,
+    "**/.output": true,
+    "**/.output/**": true,
+    "**/coverage": true,
+    "**/coverage/**": true,
+    "**/.venv*/**": true,
+    "**/__pycache__/**": true,
+    "text2sql-backend/data/**": true,
+    "**/.pytest_cache/**": true,
+    "**/.idea/**": true,
+    "**/package-lock.json": true,
+    "**/pnpm-lock.yaml": true,
+    "**/yarn.lock": true,
+  },
+
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/node_modules/**": true,
+    "**/dist": true,
+    "**/dist/**": true,
+    "**/.vite": true,
+    "**/.vite/**": true,
+    "**/.nuxt": true,
+    "**/.nuxt/**": true,
+    "**/.output": true,
+    "**/.output/**": true,
+    "**/coverage": true,
+    "**/coverage/**": true,
+    "**/package-lock.json": true,
+    "**/pnpm-lock.yaml": true,
+    "**/yarn.lock": true,
+    "**/data/**": true,
+            "**/.idea/**": true,
+
+  },
+
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/node_modules/*/**": true,
+    "**/dist/**": true,
+    "**/.vite/**": true,
+    "**/.nuxt/**": true,
+    "**/.output/**": true,
+    "**/coverage/**": true,
+    "**/data/**": true,
+    "**/.idea/**": true,
+
+  }
+}

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>机械臂强化学习分拣 | 交互回放</title>
+<style>
+  :root{font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif;color:#17324b;background:#eef3f7}
+  *{box-sizing:border-box}body{margin:0;padding:22px}main{max-width:1150px;margin:auto}
+  h1{margin:0 0 5px;font-size:28px}p{line-height:1.65;margin:6px 0 15px;color:#53677a}
+  .grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(290px,1fr);gap:16px}
+  .card{background:#fff;border:1px solid #dce6ed;border-radius:14px;box-shadow:0 5px 22px #24415a0b;padding:17px}
+  canvas{display:block;width:100%;height:auto;background:#f8fbfd;border-radius:10px}
+  .controls{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-top:13px}
+  select,button,input{font:inherit}select,button{border:1px solid #b8cad8;border-radius:8px;padding:8px 11px;background:white;color:#17324b}
+  button{background:#096fa5;border-color:#096fa5;color:white;cursor:pointer}button:hover{background:#065e8c}
+  input[type=range]{flex:1;min-width:150px}.stat{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .metric{background:#f1f6f9;padding:11px;border-radius:9px}.metric strong{display:block;font-size:22px;margin-top:4px}
+  .small{font-size:13px;color:#63798a}.legend{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0;font-size:13px}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}
+  .full{margin-top:16px}#curve{height:220px}#status{font-weight:700;color:#096fa5}
+  @media(max-width:760px){.grid{grid-template-columns:1fr}body{padding:12px}}
+</style>
+<main>
+  <h1>机械臂强化学习分拣</h1>
+  <p>索引输送带停稳后，双关节机械臂抓取包裹，绕开设备禁入区，放入指定料箱。选择四种订单，观察训练后的策略和安全联锁。</p>
+  <div class="grid">
+    <section class="card">
+      <canvas id="scene" width="760" height="560" aria-label="机械臂俯视回放"></canvas>
+      <div class="legend"><span><i class="dot" style="background:#167ab3"></i>机械臂</span><span><i class="dot" style="background:#ee9a22"></i>包裹</span><span><i class="dot" style="background:#e65b56"></i>禁入区及 10 mm 安全余量</span></div>
+      <div class="controls"><label>订单 <select id="case"></select></label><button id="play">暂停</button><button id="restart">重播</button><input id="timeline" type="range" min="0" value="0"><span id="time"></span></div>
+    </section>
+    <aside class="card">
+      <div id="status"></div><p id="desc"></p>
+      <div class="stat">
+        <div class="metric">实际动作步数<strong id="steps"></strong></div>
+        <div class="metric">最短安全路径<strong id="ideal"></strong></div>
+        <div class="metric">安全联锁次数<strong id="locks"></strong></div>
+        <div class="metric">模拟用时<strong id="seconds"></strong></div>
+      </div>
+      <p class="small">每个动作只移动一个关节 10°，耗时 0.25 秒。抓取和释放为到位后自动发出的工具指令；仿真未包含电机扭矩、视觉误差和接触力。</p>
+    </aside>
+  </div>
+  <section class="card full"><h2>训练过程</h2><canvas id="curve" width="1080" height="220" aria-label="最近一百回合成功率"></canvas><p class="small">曲线：最近 100 个训练回合的成功率。四个订单的回放使用贪心策略，各订单仅测试一次；不能据此推断真实产线可靠性。</p></section>
+  <p class="small">所有位置、禁入区与节拍均为教学设定。页面完全离线运行，无外部依赖。</p>
+</main>
+<script>
+const data=/*DATA*/;
+const scene=document.getElementById('scene'),ctx=scene.getContext('2d');
+const select=document.getElementById('case'),range=document.getElementById('timeline');
+const colors={arm:'#167ab3',item:'#ee9a22',fixture:'#e65b56'};
+let caseNo=0,frameNo=0,playing=true,last=0;
+data.cases.forEach((c,i)=>{const o=document.createElement('option');o.value=i;o.textContent=`取件位 ${c.pickup+1} → 料箱 ${c.bin+1}`;select.append(o)});
+function xy(p){return [380+p[0]*850,470-p[1]*850]}
+function line(a,b,color,width){let p=xy(a),q=xy(b);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(...p);ctx.lineTo(...q);ctx.stroke()}
+function circle(p,r,color){let q=xy(p);ctx.fillStyle=color;ctx.beginPath();ctx.arc(...q,r,0,Math.PI*2);ctx.fill()}
+function label(p,s,color){let q=xy(p);ctx.fillStyle=color;ctx.font='bold 15px system-ui';ctx.fillText(s,q[0]+15,q[1]-10)}
+function draw(){
+ const c=data.cases[caseNo],f=c.frames[frameNo];ctx.clearRect(0,0,760,560);
+ ctx.fillStyle='#edf5f9';ctx.fillRect(24,42,712,460);
+ ctx.strokeStyle='#d7e5ec';ctx.lineWidth=1;
+ for(let x=40;x<760;x+=85){ctx.beginPath();ctx.moveTo(x,42);ctx.lineTo(x,502);ctx.stroke()}
+ for(let y=45;y<510;y+=85){ctx.beginPath();ctx.moveTo(24,y);ctx.lineTo(736,y);ctx.stroke()}
+ let a=xy([data.fixture[0]-.01,data.fixture[3]+.01]),b=xy([data.fixture[1]+.01,data.fixture[2]-.01]);
+ ctx.fillStyle='#f8c2be';ctx.fillRect(a[0],a[1],b[0]-a[0],b[1]-a[1]);
+ ctx.fillStyle=colors.fixture;ctx.fillRect(a[0]+8.5,a[1]+8.5,b[0]-a[0]-17,b[1]-a[1]-17);
+ ctx.fillStyle='#465e6e';ctx.font='14px system-ui';ctx.fillText('设备禁入区',a[0]-12,a[1]-9);
+ data.picks.forEach((p,i)=>{circle(p,22,'#d7eaf7');circle(p,9,'#8bbcd8');label(p,`输送位 ${i+1}`,'#32617c')});
+ data.bins.forEach((p,i)=>{let v=xy(p);ctx.fillStyle=i===c.bin?'#84d3aa':'#c9e7d7';ctx.fillRect(v[0]-24,v[1]-24,48,48);label(p,`料箱 ${i+1}`,'#297151')});
+ line([0,0],f.elbow,colors.arm,19);line(f.elbow,f.tip,colors.arm,15);circle([0,0],15,'#17324b');circle(f.elbow,12,'#0c5d8e');circle(f.tip,11,'#17324b');
+ circle(f.event==='release'?data.bins[c.bin]:(f.phase===0?data.picks[c.pickup]:f.tip),10,colors.item);
+ let goal=f.phase===0?data.picks[c.pickup]:data.bins[c.bin];circle(goal,5,'#fff');
+ ctx.fillStyle='#29495d';ctx.font='14px system-ui';ctx.fillText(`关节角 ${25+f.q[0]*10}° / ${-130+f.q[1]*10}°`,30,27);
+ range.max=c.frames.length-1;range.value=frameNo;
+ document.getElementById('time').textContent=`${frameNo}/${c.frames.length-1}`;
+ document.getElementById('status').textContent=c.success?'任务完成':'任务未完成';
+ const events={start:'机械臂从待机位出发',move:f.phase===0?'接近输送带取件位':'携带包裹驶向目标料箱',grasp:'夹爪到位，抓取包裹',release:'到位释放，完成分拣',interlock:'安全联锁阻止了越界或碰撞动作',timeout:'超过动作步数上限'};
+ document.getElementById('desc').textContent=`当前：${events[f.event]}`;
+ document.getElementById('steps').textContent=c.steps;
+ document.getElementById('ideal').textContent=c.ideal_steps;
+ document.getElementById('locks').textContent=c.interlocks;
+ document.getElementById('seconds').textContent=(c.steps*data.dt).toFixed(2)+' s';
+}
+function curve(){let cv=document.getElementById('curve'),g=cv.getContext('2d'),h=data.history;g.clearRect(0,0,cv.width,cv.height);g.fillStyle='#f8fbfd';g.fillRect(0,0,cv.width,cv.height);g.strokeStyle='#cddde7';for(let k=0;k<=4;k++){let y=190-k*42;g.beginPath();g.moveTo(50,y);g.lineTo(1050,y);g.stroke();g.fillStyle='#577184';g.font='13px system-ui';g.fillText(`${k*25}%`,7,y+4)}let sum=0;g.beginPath();h.forEach((v,i)=>{sum+=v;if(i>=100)sum-=h[i-100];let x=50+i/(h.length-1||1)*1000,y=190-(sum/Math.min(i+1,100))*168;if(i===0)g.moveTo(x,y);else g.lineTo(x,y)});g.strokeStyle='#167ab3';g.lineWidth=3;g.stroke();g.fillStyle='#577184';g.fillText('回合 1',50,213);g.fillText(`回合 ${h.length}`,970,213)}
+select.onchange=()=>{caseNo=+select.value;frameNo=0;playing=true;document.getElementById('play').textContent='暂停';draw()};
+range.oninput=()=>{frameNo=+range.value;playing=false;document.getElementById('play').textContent='播放';draw()};
+document.getElementById('play').onclick=()=>{playing=!playing;document.getElementById('play').textContent=playing?'暂停':'播放'};
+document.getElementById('restart').onclick=()=>{frameNo=0;playing=true;document.getElementById('play').textContent='暂停';draw()};
+function tick(now){if(playing&&now-last>250){let n=data.cases[caseNo].frames.length;if(frameNo<n-1){frameNo++;draw()}else{playing=false;document.getElementById('play').textContent='播放'}last=now}requestAnimationFrame(tick)}
+curve();draw();requestAnimationFrame(tick);
+</script>
+</html>

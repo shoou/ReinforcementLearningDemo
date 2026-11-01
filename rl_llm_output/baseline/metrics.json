@@ -1,0 +1,117 @@
+{
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "config": {
+    "model": "Qwen/Qwen2.5-0.5B-Instruct",
+    "export_data": null,
+    "adapter": null,
+    "validation_only": false,
+    "output": "rl_llm_output/baseline",
+    "steps": 0,
+    "batch_size": 4,
+    "train_size": 512,
+    "eval_size": 128,
+    "lr": 0.0001,
+    "entropy": 0.01,
+    "rank": 4,
+    "eval_every": 16,
+    "threads": 4,
+    "seed": 42
+  },
+  "baseline_validation": {
+    "accuracy": 0.25,
+    "mean_reward": -0.75,
+    "risky_auto_decisions": 32,
+    "n": 128,
+    "confusion": {
+      "A": {
+        "A": 0,
+        "B": 0,
+        "C": 32,
+        "D": 0
+      },
+      "B": {
+        "A": 0,
+        "B": 0,
+        "C": 32,
+        "D": 0
+      },
+      "C": {
+        "A": 0,
+        "B": 0,
+        "C": 32,
+        "D": 0
+      },
+      "D": {
+        "A": 0,
+        "B": 0,
+        "C": 32,
+        "D": 0
+      }
+    }
+  },
+  "final_validation": {
+    "accuracy": 0.25,
+    "mean_reward": -0.75,
+    "risky_auto_decisions": 32,
+    "n": 128,
+    "confusion": {
+      "A": {
+        "A": 0,
+        "B": 0,
+        "C": 32,
+        "D": 0
+      },
+      "B": {
+        "A": 0,
+        "B": 0,
+        "C": 32,
+        "D": 0
+      },
+      "C": {
+        "A": 0,
+        "B": 0,
+        "C": 32,
+        "D": 0
+      },
+      "D": {
+        "A": 0,
+        "B": 0,
+        "C": 32,
+        "D": 0
+      }
+    }
+  },
+  "final_test": {
+    "accuracy": 0.25,
+    "mean_reward": -0.75,
+    "risky_auto_decisions": 32,
+    "n": 128,
+    "confusion": {
+      "A": {
+        "A": 0,
+        "B": 0,
+        "C": 32,
+        "D": 0
+      },
+      "B": {
+        "A": 0,
+        "B": 0,
+        "C": 32,
+        "D": 0
+      },
+      "C": {
+        "A": 0,
+        "B": 0,
+        "C": 32,
+        "D": 0
+      },
+      "D": {
+        "A": 0,
+        "B": 0,
+        "C": 32,
+        "D": 0
+      }
+    }
+  },
+  "history": []
+}

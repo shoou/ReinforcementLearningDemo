@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>售后决策 · 模型对比</title>
+  <style>
+    :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #1d2935; background: #f4f7fa; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { max-width: 1020px; margin: 0 auto; padding: 48px 24px 72px; }
+    h1 { margin: 0 0 10px; font-size: clamp(30px, 5vw, 43px); letter-spacing: -.03em; }
+    h2 { font-size: 18px; margin: 0 0 16px; }
+    p { line-height: 1.65; }
+    .eyebrow { color: #087f79; font-weight: 700; letter-spacing: .08em; font-size: 13px; }
+    .intro { color: #5b6977; margin: 0 0 28px; }
+    .panel, .card { background: white; border: 1px solid #dce5ec; border-radius: 18px; box-shadow: 0 10px 30px #1c3b5510; }
+    .panel { padding: 26px; }
+    label { display: block; font-weight: 650; margin-bottom: 10px; }
+    textarea { width: 100%; min-height: 155px; resize: vertical; border: 1px solid #b9c8d3; border-radius: 12px; padding: 16px; font: inherit; line-height: 1.6; color: inherit; }
+    textarea:focus { outline: 3px solid #87d6cf; border-color: #087f79; }
+    .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 16px; }
+    button { border: 0; border-radius: 10px; background: #087f79; color: white; font: inherit; font-weight: 700; padding: 12px 22px; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: wait; }
+    .hint { color: #697b89; font-size: 13px; }
+    .samples { margin-top: 22px; }
+    .sample-list { display: flex; flex-wrap: wrap; gap: 9px; }
+    .sample { background: #e6f3f1; color: #07645f; padding: 8px 12px; font-size: 14px; }
+    .status { min-height: 24px; margin: 18px 0 0; color: #9b3636; }
+    .result { margin-top: 28px; }
+    .summary { background: #e5f2f0; color: #075e59; padding: 14px 18px; border-radius: 12px; font-weight: 650; margin-bottom: 16px; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .card { padding: 24px; }
+    .card.tuned { border-color: #74c7bd; }
+    .tag { font-size: 13px; font-weight: 700; color: #667786; }
+    .decision { font-size: 29px; font-weight: 750; margin: 8px 0 22px; }
+    .score { display: grid; grid-template-columns: 75px 1fr 54px; gap: 9px; align-items: center; margin: 12px 0; font-size: 14px; }
+    .track { height: 10px; border-radius: 10px; background: #e9eff2; overflow: hidden; }
+    .fill { height: 100%; border-radius: 10px; background: #93a9b5; }
+    .tuned .fill { background: #0b9d90; }
+    .percent { text-align: right; font-variant-numeric: tabular-nums; }
+    .note { color: #60717e; font-size: 13px; margin-top: 18px; }
+    @media (max-width: 680px) { main { padding: 30px 16px 50px; } .grid { grid-template-columns: 1fr; } .panel, .card { padding: 20px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="eyebrow">强化学习 · 售后决策案例</div>
+    <h1>同一问题，两种模型决策</h1>
+    <p class="intro">输入一段售后工单，直观看到原始模型与 LoRA 调优后的决策。请写明签收时间、商品情况、客户诉求、凭证及物流核验情况。</p>
+    <section class="panel">
+      <form id="form">
+        <label for="ticket">售后问题</label>
+        <textarea id="ticket" maxlength="2000" placeholder="例如：买家 5 天前收到保温杯，杯盖漏水，希望退款。订单截图及商品照片已上传，物流签收记录一致。" required></textarea>
+        <div class="actions"><button id="submit" type="submit">比较推理结果</button><span class="hint">使用与训练评估相同的规则提示和四动作打分方式</span></div>
+      </form>
+      <div class="samples"><label>试试示例</label><div class="sample-list" id="samples"></div></div>
+      <p class="status" id="status" role="status" aria-live="polite"></p>
+    </section>
+    <section class="result" id="result" hidden aria-live="polite">
+      <div class="summary" id="summary"></div>
+      <div class="grid"><div class="card" id="baseline"></div><div class="card tuned" id="tuned"></div></div>
+      <p class="note">百分比是 A/B/C/D 四个候选动作的相对分数，不代表真实业务正确率；此页面不生成解释文本。课堂合成规则仅用于演示。</p>
+    </section>
+  </main>
+  <script>
+    const names = {A: '退款', B: '补发', C: '拒绝', D: '人工复核'};
+    const examples = [
+      ['破损，申请退款', '买家 5 天前收到保温杯，杯盖漏水，希望退款。订单截图和商品照片均已上传，物流签收记录与描述一致。'],
+      ['破损，申请补发', '客户 15 天前收到耳机，右耳没有声音，希望补发同款。订单凭证和照片齐全，物流记录无矛盾。'],
+      ['超过 30 天', '顾客 35 天前签收台灯，灯臂断了，要求退款。订单和照片齐全，物流签收时间已核对。'],
+      ['缺少凭证', '买家 3 天前收到外套，袖口开线，希望退款。目前尚未上传订单截图和商品照片，物流记录与描述一致。']
+    ];
+    const ticket = document.getElementById('ticket');
+    const status = document.getElementById('status');
+    const result = document.getElementById('result');
+    for (const [label, value] of examples) {
+      const button = document.createElement('button');
+      button.type = 'button'; button.className = 'sample'; button.textContent = label;
+      button.addEventListener('click', () => { ticket.value = value; ticket.focus(); });
+      document.getElementById('samples').append(button);
+    }
+    function renderCard(id, title, data) {
+      const card = document.getElementById(id);
+      card.replaceChildren();
+      const tag = document.createElement('div'); tag.className = 'tag'; tag.textContent = title; card.append(tag);
+      const decision = document.createElement('div'); decision.className = 'decision';
+      decision.textContent = `${data.action} · ${data.action_name}`; card.append(decision);
+      for (const code of ['A', 'B', 'C', 'D']) {
+        const row = document.createElement('div'); row.className = 'score';
+        const label = document.createElement('span'); label.textContent = `${code} ${names[code]}`;
+        const track = document.createElement('div'); track.className = 'track';
+        const fill = document.createElement('div'); fill.className = 'fill';
+        fill.style.width = `${Math.max(0, Math.min(100, data.scores[code] * 100))}%`; track.append(fill);
+        const pct = document.createElement('span'); pct.className = 'percent'; pct.textContent = `${(data.scores[code] * 100).toFixed(1)}%`;
+        row.append(label, track, pct); card.append(row);
+      }
+    }
+    document.getElementById('form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const button = document.getElementById('submit');
+      button.disabled = true; button.textContent = '推理中…'; status.textContent = '';
+      result.hidden = true;
+      try {
+        const response = await fetch('/api/compare', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ticket: ticket.value})});
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '请求失败');
+        renderCard('baseline', 'BASELINE · 原始模型', data.baseline);
+        renderCard('tuned', 'TUNED · LoRA 调优后', data.tuned);
+        document.getElementById('summary').textContent = data.changed
+          ? `决策发生变化：${data.baseline.action_name} → ${data.tuned.action_name}`
+          : `两者决策相同：${data.tuned.action_name}；下方可比较各动作分数`;
+        result.hidden = false;
+      } catch (error) { status.textContent = error.message; }
+      finally { button.disabled = false; button.textContent = '比较推理结果'; }
+    });
+  </script>
+</body>
+</html>
