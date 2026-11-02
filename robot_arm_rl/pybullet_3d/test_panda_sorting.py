@@ -27,10 +27,10 @@ class PandaSortingTest(unittest.TestCase):
         self.assertLess(carrying, empty)
 
     def test_trained_policy_executes_in_physics(self):
-        table, _ = train(self.cell, 12000, 42)
+        agent, _ = train(self.cell, 2000, 42)
         for pickup in range(len(PICKS)):
             for bin_id in range(len(BINS)):
-                task, path = plan(self.cell, table, pickup, bin_id,
+                task, path = plan(self.cell, agent, pickup, bin_id,
                                   42 + pickup * len(BINS) + bin_id)
                 self.assertTrue(task.success)
                 result = replay(self.cell, path, pickup, bin_id)

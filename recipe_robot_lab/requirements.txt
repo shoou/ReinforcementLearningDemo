@@ -1,0 +1,6 @@
+numpy>=1.26,<3
+scipy>=1.11,<2
+torch>=2.2,<3
+Pillow>=10,<14
+pybullet-arm64; sys_platform == "darwin" and platform_machine == "arm64"
+pybullet; sys_platform != "darwin" or platform_machine != "arm64"

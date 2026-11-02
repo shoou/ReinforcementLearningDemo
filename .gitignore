@@ -5,3 +5,7 @@
 **/actor_critic_output/**
 **/ppo_output/**
 **/dqn_output/**
+**/.venv/**
+orpo_home_service/orpo_output/**
+llm_refund/rl_llm_output/*
+q_learning_atari/qlearning_output/*

@@ -1,8 +1,8 @@
-"""CPU-friendly 3D Panda sorting: Bullet geometry, Q-learning, motor replay.
+"""三维 Panda 分拣案例：PyBullet 建安全动作图，离散 SAC 学策略，电机仿真验收。
 
-The Q-table trains on a discrete graph whose nodes and edges are validated by
-PyBullet IK and collision queries. Replay uses PyBullet motor control and physics.
-This is a simulation prototype, not a real robot controller.
+计算分两层：训练时只沿通过逆运动学和碰撞查询的离散边移动，以便快速收集经验；
+评估时把策略路径送回 PyBullet，以电机控制和物理步进检查接触、跟踪及落箱结果。
+所有工位和参数均为教学设定；这里的轨迹不能直接作为实体机械臂控制指令。
 """
 
 from __future__ import annotations
@@ -15,6 +15,13 @@ from collections import deque
 from pathlib import Path
 
 try:
+    import torch
+    from torch import nn
+    from torch.nn import functional as F
+except ImportError as exc:
+    raise SystemExit("缺少 PyTorch；请按 README.md 安装 torch") from exc
+
+try:
     import pybullet as p
     import pybullet_data
 except ImportError as exc:
@@ -22,6 +29,8 @@ except ImportError as exc:
 
 
 ROOT = Path(__file__).parent
+# 工作空间是 5 × 7 × 4 的末端位置格点；节点保存的是坐标索引，不是关节角。
+# 四个取件位和料箱占用 0、1、3、4 列；中间的第 2 列只作为过渡格点。
 X = (0.40, 0.48, 0.56, 0.64, 0.72)
 Y = (-0.24, -0.16, -0.08, 0.0, 0.08, 0.16, 0.24)
 Z = (0.12, 0.20, 0.28, 0.36)
@@ -31,6 +40,7 @@ PICKS = tuple((i, 0, 0) for i in STATION_COLUMNS)
 BINS = tuple((i, 6, 0) for i in STATION_COLUMNS)
 DIRECTIONS = ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0),
               (0, 0, 1), (0, 0, -1))
+# 下列几何量均以米为单位。PARCEL_DROP 是吸附后包裹中心相对末端的竖直偏移。
 REST = (0.0, -0.4, 0.0, -2.3, 0.0, 2.0, 0.8)
 OBSTACLE_CENTER = (0.56, 0.0, 0.115)
 OBSTACLE_HALF = (0.20, 0.035, 0.115)
@@ -42,10 +52,12 @@ SIM_DT = 1 / 240
 
 
 def xyz(node):
+    """把离散格点索引映射到 PyBullet 世界坐标（米）。"""
     return (X[node[0]], Y[node[1]], Z[node[2]])
 
 
 def add_box(half, pos, rgba, mass=0.0, collision=True):
+    """创建障碍、工位或包裹；half 是长宽高的一半，mass=0 表示静态物体。"""
     shape = p.createCollisionShape(p.GEOM_BOX, halfExtents=half) if collision else -1
     visual = p.createVisualShape(p.GEOM_BOX, halfExtents=half, rgbaColor=rgba)
     return p.createMultiBody(baseMass=mass, baseCollisionShapeIndex=shape,
@@ -53,6 +65,8 @@ def add_box(half, pos, rgba, mass=0.0, collision=True):
 
 
 class BulletCell:
+    """拥有一个 PyBullet 场景，并预计算每个阶段可用的安全位姿和边。"""
+
     def __init__(self, gui=False):
         self.client = p.connect(p.GUI if gui else p.DIRECT)
         if self.client < 0:
@@ -83,6 +97,8 @@ class BulletCell:
             info = p.getJointInfo(self.robot, joint)
             self.lower.append(info[8])
             self.upper.append(info[9])
+        # poses[node] 为该末端格点的一组七关节逆解。
+        # edges[0] 用于空臂取件，edges[1] 用于携件；后者还检查包裹包围盒。
         self.poses = {}
         self.edges = {0: {}, 1: {}}
         self.parcel = None
@@ -94,6 +110,7 @@ class BulletCell:
             p.disconnect(self.client)
 
     def reset_joints(self, values):
+        """直接设置关节状态，用于构图和回放起点；不代表真实运动过程。"""
         for joint, value in enumerate(values):
             p.resetJointState(self.robot, joint, value)
             p.setJointMotorControl2(self.robot, joint, p.POSITION_CONTROL,
@@ -105,6 +122,7 @@ class BulletCell:
         return p.getLinkState(self.robot, TOOL_LINK, computeForwardKinematics=True)[4]
 
     def ik(self, point):
+        """求目标点的七关节逆解，并剔除末端误差或关节越界的候选。"""
         # The nullspace solver depends on current joints. Start from one
         # consistent, joint-limit-compliant rest pose for graph construction.
         self.reset_joints(REST)
@@ -122,10 +140,12 @@ class BulletCell:
         return tuple(q)
 
     def robot_clear(self, q):
+        """要求机械臂与固定设备最近距离至少为 12 mm。"""
         self.reset_joints(q)
         return not p.getClosestPoints(self.robot, self.obstacle, 0.012)
 
     def parcel_clear(self, point):
+        """用保守轴对齐包围盒过滤携件时可能穿越障碍的末端位姿。"""
         # Conservative AABB check for the vacuum-held parcel. The margin is
         # applied in world coordinates; no claim of continuous swept volume.
         x, y, z = point
@@ -137,6 +157,7 @@ class BulletCell:
                 abs((z - PARCEL_DROP) - oz) > hz + PARCEL_HALF[2] + margin)
 
     def edge_clear(self, a, b, carrying):
+        """沿两个逆解之间采样 11 个关节姿态，检查整条动作边。"""
         if b not in self.poses:
             return False
         qa, qb = self.poses[a], self.poses[b]
@@ -150,6 +171,7 @@ class BulletCell:
         return True
 
     def build_graph(self):
+        """先筛选安全格点，再分别构建空臂和携件的六邻接动作图。"""
         for i in range(len(X)):
             for j in range(len(Y)):
                 for k in range(len(Z)):
@@ -165,6 +187,7 @@ class BulletCell:
                     if self.edge_clear(node, nxt, carrying):
                         legal[action] = nxt
                 self.edges[carrying][node] = legal
+        # 训练前确认每个订单都存在取件路径及携件送箱路径，避免不可达任务。
         required = (HOME, *PICKS, *BINS)
         if any(node not in self.poses for node in required):
             raise RuntimeError("home or work station is outside the safe IK graph")
@@ -174,6 +197,7 @@ class BulletCell:
                     raise RuntimeError("a work order has no collision-free path")
 
     def shortest(self, start, goal, carrying):
+        """广度优先搜索；单位边权下返回最少动作数，仅用作可达性和对照。"""
         queue = deque([(start, 0)])
         seen = {start}
         while queue:
@@ -187,6 +211,7 @@ class BulletCell:
         return None
 
     def new_parcel(self, pickup, offset=(0.0, 0.0), mass=0.08, friction=0.8):
+        """为一次物理回放创建包裹；扰动测试只改变偏移、质量和摩擦。"""
         if self.constraint is not None:
             p.removeConstraint(self.constraint)
             self.constraint = None
@@ -199,6 +224,7 @@ class BulletCell:
         p.changeDynamics(self.parcel, -1, lateralFriction=friction)
 
     def attach(self):
+        """末端足够接近包裹时建立固定约束，模拟真空吸附。"""
         if math.dist(self.tool_position(), p.getBasePositionAndOrientation(self.parcel)[0]) > 0.10:
             return False
         self.constraint = p.createConstraint(
@@ -211,6 +237,7 @@ class BulletCell:
         return True
 
     def release(self):
+        """解除工具约束，再步进半秒，让包裹自然落到料箱表面。"""
         if self.constraint is not None:
             p.removeConstraint(self.constraint)
             self.constraint = None
@@ -221,7 +248,7 @@ class BulletCell:
             p.stepSimulation()
 
     def move_motors(self, a, b, carrying):
-        """Interpolate motor targets; stop on actual barrier contact."""
+        """插值驱动一条图边；每个物理步检查真实接触，结束时检查末端误差。"""
         qa, qb = self.poses[a], self.poses[b]
         # 16 target segments × 12 physics ticks = 0.8 simulated seconds.
         for segment in range(1, 17):
@@ -242,6 +269,7 @@ class BulletCell:
         return True, "ok"
 
     def image(self):
+        """用 CPU TinyRenderer 截取当前场景，供 GIF 动画使用。"""
         from PIL import Image
         view = p.computeViewMatrix([1.20, -0.97, 1.34], [0.56, 0.0, 0.20], [0, 0, 1])
         proj = p.computeProjectionMatrixFOV(58, 4 / 3, 0.05, 3.0)
@@ -252,6 +280,8 @@ class BulletCell:
 
 
 class SortingTask:
+    """安全图上的单包裹任务；phase=0 取件，phase=1 携件送箱。"""
+
     def __init__(self, cell, pickup, bin_id):
         self.cell = cell
         self.pickup = pickup
@@ -264,26 +294,31 @@ class SortingTask:
         self.success = False
 
     def state(self):
+        """便于记录和调试的离散状态元组；网络实际使用 observation()。"""
         return (self.pickup, self.bin_id, self.phase, *self.node)
 
     def goal(self):
         return PICKS[self.pickup] if self.phase == 0 else BINS[self.bin_id]
 
     def step(self, action):
+        """执行一个图动作，并返回新状态、奖励、结束标志和工具事件。"""
         if self.done:
             raise RuntimeError("episode ended")
         old = math.dist(xyz(self.node), xyz(self.goal()))
         nxt = self.cell.edges[self.phase][self.node].get(action)
         self.steps += 1
         if nxt is None:
+            # 图外动作被联锁拦截，机械臂原地不动，但仍消耗一个决策步。
             self.interlocks += 1
             reward, event = -0.25, "interlock"
         else:
             self.node = nxt
+            # 稠密奖励：朝当前阶段目标靠近得正值；每一步还要付时间成本。
             reward = -0.03 + 4 * (old - math.dist(xyz(nxt), xyz(self.goal())))
             event = "move"
         if self.node == self.goal():
             if self.phase == 0:
+                # 抓取在到达取件格点时自动发生，随后换用携件安全图。
                 self.phase = 1
                 reward += 3
                 event = "grasp"
@@ -298,39 +333,148 @@ class SortingTask:
         return self.state(), reward, self.done, event
 
 
-def choose(table, state, rng, epsilon):
-    if rng.random() < epsilon:
-        return rng.randrange(6)
-    values = table.get(state, [0.0] * 6)
-    best = max(values)
-    return rng.choice([i for i, value in enumerate(values) if value >= best - 1e-10])
+def observation(task):
+    """九维归一化观测：订单、阶段、末端格点及相对目标的三维偏移。"""
+    goal = task.goal()
+    node = task.node
+    return [task.pickup / 3, task.bin_id / 3, float(task.phase),
+            node[0] / 4, node[1] / 6, node[2] / 3,
+            (goal[0] - node[0]) / 4, (goal[1] - node[1]) / 6,
+            (goal[2] - node[2]) / 3]
 
 
-def train(cell, episodes, seed):
+def action_mask(task):
+    """只允许当前阶段安全图中存在的动作；训练和推理使用相同掩码。"""
+    legal = task.cell.edges[task.phase][task.node]
+    return [action in legal for action in range(len(DIRECTIONS))]
+
+
+class Network(nn.Module):
+    """共享网络结构：九维观测输入，输出六个动作各自的 logit 或 Q 值。"""
+    def __init__(self):
+        super().__init__()
+        self.layers = nn.Sequential(nn.Linear(9, 64), nn.ReLU(),
+                                    nn.Linear(64, 64), nn.ReLU(),
+                                    nn.Linear(64, len(DIRECTIONS)))
+
+    def forward(self, states):
+        return self.layers(states)
+
+
+def masked_policy(logits, masks):
+    """将非法动作的 logit 压低，再得到合法动作上的概率和对数概率。"""
+    log_probs = F.log_softmax(logits.masked_fill(~masks, -1e9), dim=-1)
+    return log_probs.exp(), log_probs
+
+
+class DiscreteSAC:
+    """离散 SAC：分类 actor、两个 Q critic 和各自的慢更新目标网络。"""
+
+    def __init__(self, seed, alpha=0.1, lr=3e-4):
+        torch.manual_seed(seed)
+        torch.set_num_threads(1)
+        self.actor = Network()
+        self.q1, self.q2 = Network(), Network()
+        self.target1, self.target2 = Network(), Network()
+        self.target1.load_state_dict(self.q1.state_dict())
+        self.target2.load_state_dict(self.q2.state_dict())
+        self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=lr)
+        self.q_opt = torch.optim.Adam(list(self.q1.parameters()) + list(self.q2.parameters()), lr=lr)
+        self.alpha = alpha
+
+    def choose(self, task, rng, greedy=False):
+        """训练时按策略概率采样；规划回放时取概率最大的合法动作。"""
+        with torch.no_grad():
+            state = torch.tensor([observation(task)], dtype=torch.float32)
+            mask = torch.tensor([action_mask(task)])
+            probs, _ = masked_policy(self.actor(state), mask)
+            if greedy:
+                return int(probs.argmax(dim=-1).item())
+            return rng.choices(range(len(DIRECTIONS)), weights=probs[0].tolist())[0]
+
+    def update(self, batch, gamma=0.98, tau=0.005):
+        """对一批历史转移做一次 SAC 更新；tau 控制目标网络软更新速度。"""
+        states = torch.tensor([row[0] for row in batch], dtype=torch.float32)
+        actions = torch.tensor([row[1] for row in batch], dtype=torch.long).unsqueeze(1)
+        rewards = torch.tensor([row[2] for row in batch], dtype=torch.float32)
+        next_states = torch.tensor([row[3] for row in batch], dtype=torch.float32)
+        dones = torch.tensor([row[4] for row in batch], dtype=torch.float32)
+        masks = torch.tensor([row[5] for row in batch], dtype=torch.bool)
+        next_masks = torch.tensor([row[6] for row in batch], dtype=torch.bool)
+
+        with torch.no_grad():
+            # 软 Bellman 目标：在下一状态对合法动作求期望，并加入熵奖励。
+            # 双目标 Q 取较小者，以减轻价值高估；终止状态不再自举。
+            next_probs, next_logs = masked_policy(self.actor(next_states), next_masks)
+            next_q = torch.minimum(self.target1(next_states), self.target2(next_states))
+            soft_value = (next_probs * (next_q - self.alpha * next_logs)).sum(dim=1)
+            targets = rewards + gamma * (1 - dones) * soft_value
+
+        # 两个 critic 只回归本次实际执行动作的价值。
+        q1 = self.q1(states).gather(1, actions).squeeze(1)
+        q2 = self.q2(states).gather(1, actions).squeeze(1)
+        loss = F.mse_loss(q1, targets) + F.mse_loss(q2, targets)
+        self.q_opt.zero_grad()
+        loss.backward()
+        self.q_opt.step()
+
+        probs, logs = masked_policy(self.actor(states), masks)
+        with torch.no_grad():
+            min_q = torch.minimum(self.q1(states), self.q2(states))
+        # actor 在期望高 Q 动作的同时保留探索熵；alpha 越大越偏向分散概率。
+        actor_loss = (probs * (self.alpha * logs - min_q)).sum(dim=1).mean()
+        self.actor_opt.zero_grad()
+        actor_loss.backward()
+        self.actor_opt.step()
+
+        with torch.no_grad():
+            # Polyak 平均：target ← (1-tau)·target + tau·critic。
+            for target, critic in ((self.target1, self.q1), (self.target2, self.q2)):
+                for dst, src in zip(target.parameters(), critic.parameters()):
+                    dst.lerp_(src, tau)
+
+
+def train(cell, episodes, seed, alpha=0.1, batch_size=128, warmup=1000,
+          update_every=4):
+    """从 16 种订单随机采样训练回合，返回共享策略和逐回合成功记录。"""
     rng = random.Random(seed)
-    table, history = {}, []
+    agent = DiscreteSAC(seed, alpha=alpha)
+    memory = deque(maxlen=100_000)
+    history = []
+    steps = 0
     for ep in range(episodes):
         task = SortingTask(cell, rng.randrange(len(PICKS)), rng.randrange(len(BINS)))
-        epsilon = max(0.03, 0.60 * (1 - ep / episodes) ** 1.5)
         for _ in range(MAX_STEPS):
-            state = task.state()
-            action = choose(table, state, rng, epsilon)
-            next_state, reward, done, _ = task.step(action)
-            values = table.setdefault(state, [0.0] * 6)
-            future = 0 if done else max(table.get(next_state, [0.0] * 6))
-            values[action] += 0.28 * (reward + 0.98 * future - values[action])
+            state, mask = observation(task), action_mask(task)
+            if steps < warmup:
+                # 先用合法随机动作填充经验池，避免网络用几乎空白的数据更新。
+                action = rng.choice([a for a, allowed in enumerate(mask) if allowed])
+            else:
+                action = agent.choose(task, rng)
+            _, reward, done, _ = task.step(action)
+            memory.append((state, action, reward, observation(task), done,
+                           mask, action_mask(task)))
+            steps += 1
+            # 经验回放打破相邻轨迹的相关性；一次更新复用随机抽取的历史转移。
+            if steps >= warmup and steps % update_every == 0 and len(memory) >= batch_size:
+                agent.update(rng.sample(memory, batch_size))
             if done:
                 break
         history.append(int(task.success))
-    return table, history
+        if (ep + 1) % max(1, episodes // 20) == 0:
+            recent = history[-100:]
+            print(f"episode {ep + 1}/{episodes}: last-100 success "
+                  f"{sum(recent) / len(recent):.0%}", flush=True)
+    return agent, history
 
 
-def plan(cell, table, pickup, bin_id, seed):
+def plan(cell, agent, pickup, bin_id, seed):
+    """用训练好的确定性策略生成一条图路径，不在这里运行电机物理仿真。"""
     task = SortingTask(cell, pickup, bin_id)
     rng = random.Random(seed)
     path = [(HOME, 0, "start")]
     for _ in range(MAX_STEPS):
-        action = choose(table, task.state(), rng, 0)
+        action = agent.choose(task, rng, greedy=True)
         _, _, done, event = task.step(action)
         path.append((task.node, task.phase, event))
         if done:
@@ -340,6 +484,7 @@ def plan(cell, table, pickup, bin_id, seed):
 
 def replay(cell, path, pickup, bin_id, image_path=None,
            parcel_offset=(0.0, 0.0), parcel_mass=0.08, parcel_friction=0.8):
+    """独立物理验收：逐边驱动、执行吸放事件，并检查包裹最终落箱。"""
     cell.reset_joints(cell.poses[HOME])
     cell.new_parcel(pickup, parcel_offset, parcel_mass, parcel_friction)
     for _ in range(60):
@@ -350,6 +495,7 @@ def replay(cell, path, pickup, bin_id, image_path=None,
     tracking_errors = []
     for (old, phase_before, _), (node, _, event) in zip(path, path[1:]):
         if old != node:
+            # phase_before 决定该段是否携件；接触和跟踪误差在动力学中重新检查。
             ok, message = cell.move_motors(old, node, phase_before)
             tracking_errors.append(math.dist(cell.tool_position(), xyz(node)))
             if not ok:
@@ -365,6 +511,7 @@ def replay(cell, path, pickup, bin_id, image_path=None,
             images.append(cell.image())
     parcel_pos = p.getBasePositionAndOrientation(cell.parcel)[0]
     goal = xyz(BINS[bin_id])
+    # 判定同时要求策略已释放、回放没有故障、包裹水平与竖直位置落在容差内。
     placed = (failure is None and path[-1][2] == "release"
               and math.dist(parcel_pos[:2], goal[:2]) < 0.025
               and abs(parcel_pos[2] - 0.035) < 0.03)
@@ -378,9 +525,11 @@ def replay(cell, path, pickup, bin_id, image_path=None,
 
 
 def write_report(output, report, history, gifs):
+    """把训练曲线、订单矩阵和物理指标嵌入离线 HTML 报告。"""
     points = []
     total = 0
     for i, success in enumerate(history):
+        # 手工计算最近 100 回合的移动平均，再抽样至约 200 个 SVG 点。
         total += success
         if i >= 100:
             total -= history[i - 100]
@@ -392,6 +541,7 @@ def write_report(output, report, history, gifs):
     for pickup in range(1, len(PICKS) + 1):
         cells = []
         for bin_id in range(1, len(BINS) + 1):
+            # cases 按取件位外层、料箱内层生成；这里保持同样的行列顺序。
             index = (pickup - 1) * len(BINS) + bin_id - 1
             outcome = "✓" if report["cases"][index]["physical_success"] else "×"
             cells.append(f'<td><button type="button" data-index="{index}" '
@@ -408,6 +558,7 @@ def write_report(output, report, history, gifs):
                                  f'<text x="{x:.1f}" y="{y+5}" text-anchor="middle" '
                                  f'fill="white" font-size="14">{name}{index}</text>')
     cases_json = json.dumps(report["cases"], ensure_ascii=False)
+    # HTML 仅嵌入轻量指标；GIF 按选中订单的文件名延迟加载。
     first_image = ('<img id="selected-image" src="order_1_to_1.gif" '
                    'alt="取件位 1 到料箱 1 的三维机械臂回放">' if gifs
                    else '<p>使用 --no-gif 跳过了动画渲染</p>')
@@ -426,7 +577,7 @@ def write_report(output, report, history, gifs):
     .matrix button[aria-pressed="true"]{{background:#1477a8;color:#fff;border-color:#1477a8}}
     .matrix button:hover{{border-color:#1477a8}}#selected-meta{{line-height:1.9}}
     @media(max-width:760px){{.grid{{grid-template-columns:1fr}}body{{padding:12px}}}}</style>
-    <main><h1>PyBullet 三维机械臂分拣</h1><p class="muted">Franka Panda 七关节 URDF · CPU 物理仿真 · Q-learning 安全路径 · 真空吸附工具模型</p>
+    <main><h1>PyBullet 三维机械臂分拣</h1><p class="muted">Franka Panda 七关节 URDF · CPU 物理仿真 · 离散 SAC 安全路径 · 真空吸附工具模型</p>
     <section class="panel"><h2>四个取件位 × 四个料箱</h2><svg viewBox="0 0 800 190" role="img" aria-label="四个取件位、障碍物与四个料箱的工位布局">
     <rect x="70" y="27" width="660" height="43" rx="8" fill="#d4e8f4"/>
     <rect x="70" y="120" width="660" height="43" rx="8" fill="#d9f0e2"/>
@@ -436,7 +587,7 @@ def write_report(output, report, history, gifs):
     <section class="panel"><h2>训练成功率</h2><svg viewBox="0 0 800 190" role="img" aria-label="最近一百回合训练成功率">
     <path d="M45 35H755 M45 160H755" stroke="#d2dfe7"/><text x="8" y="40">100%</text><text x="15" y="165">0%</text>
     <polyline points="{' '.join(points)}" fill="none" stroke="#177db5" stroke-width="3"/>
-    </svg><p class="muted">默认种子 {report["seed"]} · {report["episodes"]} 回合 · 最近 100 回合 {report["last_100_train_success"]:.0%}。16 种订单的策略使用同一张 Q 表。</p></section>
+    </svg><p class="muted">种子 {report["seed"]} · {report["episodes"]} 回合 · 最近 100 回合 {report["last_100_train_success"]:.0%}。16 种订单使用同一个 SAC 策略网络。</p></section>
     <div class="grid"><section class="panel"><h2 id="selected-title">取件位 1 → 料箱 1</h2>
     {first_image}<p id="selected-meta"></p></section>
     <section class="panel"><h2>选择订单</h2><table class="matrix"><thead><tr><th></th>{headers}</tr></thead>
@@ -453,29 +604,34 @@ def write_report(output, report, history, gifs):
 
 
 def main():
+    """依次构图、训练、物理回放、扰动测试，并写出报告和关节轨迹。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--episodes", type=int, default=12000)
+    parser.add_argument("--episodes", type=int, default=2000)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--alpha", type=float, default=0.1,
+                        help="SAC entropy coefficient")
     parser.add_argument("--gui", action="store_true", help="also open the PyBullet 3D window")
     parser.add_argument("--no-gif", action="store_true", help="skip CPU render")
     parser.add_argument("--stress-trials", type=int, default=3,
                         help="extra physical replays per order with perturbed parcel pose/mass/friction")
     parser.add_argument("--output", type=Path, default=ROOT / "output")
     args = parser.parse_args()
-    if args.episodes < 1 or args.stress_trials < 0:
-        parser.error("episodes must be positive and stress trials nonnegative")
+    if args.episodes < 1 or args.stress_trials < 0 or args.alpha < 0:
+        parser.error("episodes must be positive, stress trials and alpha nonnegative")
     cell = BulletCell(gui=args.gui)
     try:
+        # 构图只做一次；训练与后续所有订单共享相同的安全动作图。
         cell.build_graph()
         print(f"PyBullet safety graph: {len(cell.poses)} poses, "
               f"{sum(map(len, cell.edges[0].values()))} empty-arm moves, "
               f"{sum(map(len, cell.edges[1].values()))} carrying moves")
-        table, history = train(cell, args.episodes, args.seed)
+        agent, history = train(cell, args.episodes, args.seed, alpha=args.alpha)
         args.output.mkdir(parents=True, exist_ok=True)
         results = []
         for pickup in range(len(PICKS)):
             for bin_id in range(len(BINS)):
-                task, path = plan(cell, table, pickup, bin_id,
+                # 策略成功与物理成功分开记录：图上的可行路径仍需电机回放验收。
+                task, path = plan(cell, agent, pickup, bin_id,
                                   args.seed + pickup * len(BINS) + bin_id)
                 gif = args.output / f"order_{pickup+1}_to_{bin_id+1}.gif"
                 physical = replay(cell, path, pickup, bin_id,
@@ -487,7 +643,8 @@ def main():
                        "interlocks": task.interlocks, **physical}
                 results.append(row)
                 print(f"order {pickup+1}->{bin_id+1}: {row}")
-        report = {"seed": args.seed, "episodes": args.episodes,
+        report = {"algorithm": "Discrete SAC", "seed": args.seed,
+                  "episodes": args.episodes, "alpha": args.alpha,
                   "last_100_train_success": sum(history[-100:]) / min(100, len(history)),
                   "safe_poses": len(cell.poses),
                   "pickup_positions_xyz_m": [xyz(node) for node in PICKS],
@@ -495,9 +652,10 @@ def main():
                   "cases": results}
         stress_rng = random.Random(args.seed + 991)
         stress = []
+        # 扰动仅作用于物理包裹；策略没有针对每次扰动重新规划或再训练。
         for pickup in range(len(PICKS)):
             for bin_id in range(len(BINS)):
-                _, path = plan(cell, table, pickup, bin_id,
+                _, path = plan(cell, agent, pickup, bin_id,
                                args.seed + pickup * len(BINS) + bin_id)
                 trials = []
                 for _ in range(args.stress_trials):
@@ -521,9 +679,10 @@ def main():
         (args.output / "train_success.json").write_text(
             json.dumps(history), encoding="utf-8")
         trajectories = []
+        # 保存每个格点的末端坐标和逆解目标，供教学检查工具事件与运动路线。
         for pickup in range(len(PICKS)):
             for bin_id in range(len(BINS)):
-                _, path = plan(cell, table, pickup, bin_id,
+                _, path = plan(cell, agent, pickup, bin_id,
                                args.seed + pickup * len(BINS) + bin_id)
                 trajectories.append({"pickup": pickup + 1, "bin": bin_id + 1,
                                      "waypoints": [
@@ -536,6 +695,7 @@ def main():
         write_report(args.output, report, history, not args.no_gif)
         print(f"Saved to {args.output}")
     finally:
+        # 无论训练或渲染是否报错，都释放 PyBullet 连接。
         cell.close()
 
 

@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>ORPO 效果演示 · 家政预约助手</title>
+  <style>
+    :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; color: #183042; background: #f4f7f7; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    button { font: inherit; }
+    .shell { max-width: 1160px; margin: auto; padding: 0 24px 80px; }
+    .hero { background: linear-gradient(125deg, #12384b, #14616a 72%, #248779); color: #fff; overflow: hidden; }
+    .hero-inner { max-width: 1160px; margin: auto; padding: 52px 24px 62px; position: relative; }
+    .hero-inner::after { content: "ORPO"; position: absolute; right: -10px; bottom: -80px; font-size: clamp(160px, 26vw, 310px); font-weight: 900; letter-spacing: -.1em; color: #ffffff0c; pointer-events: none; }
+    .eyebrow { font-size: 13px; font-weight: 800; letter-spacing: .15em; color: #a8efe1; text-transform: uppercase; }
+    h1 { font-size: clamp(34px, 5vw, 58px); line-height: 1.14; letter-spacing: -.045em; margin: 16px 0 18px; max-width: 800px; }
+    .hero p { max-width: 720px; line-height: 1.8; color: #d1e7e7; margin: 0; }
+    .hero-tags { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 24px; }
+    .hero-tags span { border: 1px solid #d7ffff50; border-radius: 999px; padding: 7px 12px; font-size: 12px; color: #e8ffff; }
+    .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin: 42px 0 18px; }
+    .section-head h2 { margin: 0; font-size: 25px; letter-spacing: -.025em; }
+    .section-head p { margin: 0; color: #637782; font-size: 13px; }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .stat, .panel, .reply-card { background: #fff; border: 1px solid #dce7e7; border-radius: 18px; box-shadow: 0 12px 35px #163f4a0a; }
+    .stat { padding: 24px; }
+    .stat-label { color: #5b7580; font-size: 13px; font-weight: 700; }
+    .stat strong { display: block; font-size: clamp(29px, 4vw, 42px); letter-spacing: -.045em; margin: 10px 0 4px; font-variant-numeric: tabular-nums; }
+    .stat strong em { color: #0b8b79; font-style: normal; }
+    .stat small { color: #71838b; line-height: 1.6; }
+    .panel { padding: 26px; }
+    .trend-wrap { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(240px, .8fr); gap: 26px; align-items: center; }
+    .chart-title { font-weight: 750; margin: 0 0 8px; }
+    .chart-subtitle, .source-note { color: #697e86; font-size: 13px; line-height: 1.7; }
+    #trend { display: block; width: 100%; height: auto; margin-top: 10px; }
+    .trend-summary { background: #e8f5f1; border-radius: 14px; padding: 21px; color: #185a55; line-height: 1.7; }
+    .trend-summary b { display: block; font-size: 15px; margin-bottom: 7px; }
+    .trend-summary p { margin: 0; font-size: 14px; }
+    .demo-layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 16px; align-items: start; }
+    .scenario-menu { padding: 10px; }
+    .scenario-menu h3 { font-size: 13px; color: #6b7c84; margin: 10px 13px 12px; }
+    .scenario-button { display: flex; width: 100%; align-items: center; gap: 12px; text-align: left; background: transparent; border: 0; border-radius: 11px; padding: 13px; color: #34505e; cursor: pointer; font-weight: 700; }
+    .scenario-button:hover { background: #eef5f4; }
+    .scenario-button[aria-pressed="true"] { background: #dff2ee; color: #075f55; }
+    .scenario-button:focus-visible { outline: 3px solid #e7a653; outline-offset: 2px; }
+    .scenario-number { font-size: 12px; color: #84999f; font-variant-numeric: tabular-nums; }
+    .example { padding: 25px; }
+    .example-kicker { font-size: 12px; color: #0b8b79; font-weight: 800; letter-spacing: .09em; }
+    .question { font-size: clamp(18px, 2.4vw, 23px); font-weight: 750; line-height: 1.55; margin: 9px 0 24px; }
+    .reply-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
+    .reply-card { padding: 22px; box-shadow: none; min-height: 190px; }
+    .reply-card.after { border-color: #96d5c6; background: #f5fbf8; }
+    .reply-label { font-size: 12px; font-weight: 800; letter-spacing: .07em; color: #74838b; }
+    .after .reply-label { color: #087d6b; }
+    .reply-text { line-height: 1.8; font-size: 15px; margin: 17px 0 0; overflow-wrap: anywhere; }
+    .takeaway { display: flex; gap: 10px; align-items: flex-start; background: #fff7e9; color: #73501b; border-radius: 11px; padding: 14px 16px; margin: 15px 0 0; font-size: 13px; line-height: 1.7; }
+    .takeaway b { white-space: nowrap; }
+    .method { margin-top: 24px; border-left: 3px solid #85b8af; padding: 1px 0 1px 16px; color: #627680; font-size: 13px; line-height: 1.75; }
+    .method p { margin: 7px 0; }
+    a { color: #087b70; }
+    @media (max-width: 800px) { .trend-wrap, .demo-layout { grid-template-columns: 1fr; } .scenario-menu { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; } .scenario-menu h3 { grid-column: 1 / -1; } }
+    @media (max-width: 620px) { .hero-inner { padding: 40px 20px 48px; } .shell { padding: 0 16px 54px; } .stats { grid-template-columns: 1fr; } .stat { padding: 18px 20px; } .stat strong { margin: 4px 0; } .section-head { display: block; } .section-head p { margin-top: 6px; } .scenario-menu { grid-template-columns: repeat(2, 1fr); } .reply-grid { grid-template-columns: 1fr; } .reply-card { min-height: auto; } .example, .panel { padding: 19px; } .takeaway { display: block; } .takeaway b { display: block; margin-bottom: 3px; } }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner">
+      <div class="eyebrow">强化学习 · 偏好优化案例</div>
+      <h1>家政预约助手，微调后如何回答？</h1>
+      <p>从真实保存的实验记录中选一个问题，对照基础模型和 ORPO 微调后的回复。观察助手如何询问缺失信息，避免直接报价、承诺排班或擅自确认服务范围。</p>
+      <div class="hero-tags"><span>Qwen2.5-0.5B-Instruct</span><span>LoRA + ORPO</span><span>六类合成家政情形</span><span>本地静态演示</span></div>
+    </div>
+  </header>
+  <main class="shell">
+    <div class="section-head"><h2>实验结果</h2><p>同一套已保存的完整训练记录</p></div>
+    <section class="stats" aria-label="实验指标">
+      <div class="stat"><div class="stat-label">抽样验证集 · 偏好准确率</div><strong id="validation-stat"></strong><small>同一批 24 对，微调前 → 微调后</small></div>
+      <div class="stat"><div class="stat-label">完整测试集 · 偏好准确率</div><strong id="test-stat"></strong><small>重新加载适配器后评估，48 对</small></div>
+      <div class="stat"><div class="stat-label">训练规模</div><strong id="steps-stat"></strong><small>240 对训练数据，每对参与一次更新</small></div>
+    </section>
+
+    <div class="section-head"><h2>学习过程</h2><p>验证集 24 对，每个点均来自保存的评估记录</p></div>
+    <section class="panel trend-wrap" aria-label="训练曲线">
+      <div><p class="chart-title">较好回复胜过较差回复的比例</p><div class="chart-subtitle">横轴为训练步数；纵轴为成对偏好准确率</div><svg id="trend" viewBox="0 0 640 275" role="img" aria-label="训练步数和验证集偏好准确率折线图"></svg></div>
+      <div class="trend-summary"><b>这张图说明什么？</b><p>模型对本案例中预先写好的较好回复，给出了更高的平均 token 概率。这个指标衡量成对偏好排序；下方展示的是模型自由生成的实际文本。</p></div>
+    </section>
+
+    <div class="section-head"><h2>逐题看回复</h2><p>点击左侧情形，比较同一个问题的训练前后输出</p></div>
+    <section class="demo-layout" aria-label="六类场景回复对照">
+      <nav class="panel scenario-menu" aria-label="选择家政情形"><h3>选择情形</h3><div id="scenario-buttons" style="display:contents"></div></nav>
+      <div class="panel example" aria-live="polite">
+        <div class="example-kicker" id="scenario-category"></div>
+        <p class="question" id="question"></p>
+        <div class="reply-grid">
+          <article class="reply-card"><div class="reply-label">BEFORE · 基础模型</div><p class="reply-text" id="before-reply"></p></article>
+          <article class="reply-card after"><div class="reply-label">AFTER · ORPO 微调后</div><p class="reply-text" id="after-reply"></p></article>
+        </div>
+        <div class="takeaway"><b>观察重点</b><span id="takeaway"></span></div>
+      </div>
+    </section>
+    <div class="method">
+      <p>页面展示已保存的实验快照，不会实时调用模型或预约服务。六条回复来自 <a href="orpo_output/full/metrics.json">metrics.json</a>；完整 48 对测试结果来自 <a href="orpo_output/full/evaluation_48.json">evaluation_48.json</a>。</p>
+      <p>数据和答案模板均为合成课堂材料。100% 只针对该测试集的成对偏好排序，不能代表真实用户问题上的正确率。风险短语检测也不能代替人工审核。详见 <a href="README.md">案例说明</a>。</p>
+    </div>
+  </main>
+  <script id="demo-data" type="application/json">{"baseline_validation":{"pairs":24,"accuracy":0.5,"mean_logp_margin":0.10058412949244182},"final_validation":{"pairs":24,"accuracy":1.0,"mean_logp_margin":7.467025995254517},"history":[{"step":1,"loss":3.200901508331299,"validation":{"pairs":24,"accuracy":0.5,"mean_logp_margin":0.10552933812141418}},{"step":60,"loss":2.418883800506592,"validation":{"pairs":24,"accuracy":0.9583333333333334,"mean_logp_margin":1.2827037473519642}},{"step":120,"loss":1.6959056854248047,"validation":{"pairs":24,"accuracy":1.0,"mean_logp_margin":3.4097312887509665}},{"step":180,"loss":0.3185986578464508,"validation":{"pairs":24,"accuracy":1.0,"mean_logp_margin":6.179577728112538}},{"step":240,"loss":0.07135172933340073,"validation":{"pairs":24,"accuracy":1.0,"mean_logp_margin":7.467025995254517}}],"before_replies":[{"category":"missing_area","prompt":"我准备找家政，周日下午想做一次日常保洁，能帮我安排吗？","reply":"好的，请问您需要清洁的房间是客厅还是卧室？","risk_phrase_detected":false},{"category":"missing_time","prompt":"请问我家约45平方米，想做深度保洁，什么时候能上门？","reply":"您好，请问您需要清洁的房间是客厅还是卧室？如果需要清洁的房间是客厅，那么我们建议在下午2点到3点之间进行预约。如果是卧室，则建议在晚上10点之后进行预约。请提供您的具体需求，以便我们为您安排合适的清洁时间。","risk_phrase_detected":false},{"category":"price","prompt":"请问110平方米，下周二上午做厨房清洁要多少钱？","reply":"您好！您需要我帮您查询具体的价格吗？","risk_phrase_detected":false},{"category":"availability","prompt":"我准备找家政，68平方米的深度保洁想约下周五下午，这个时段还有人吗？","reply":"您好，深保洁需要提前预约，建议您在周六或者周日进行预约。","risk_phrase_detected":false},{"category":"scope","prompt":"我准备找家政，45平方米想在周六上午做深度保洁，还要清洗高处外墙，可以一起做吗？","reply":"您好！您的需求是关于家政服务的，请问您需要哪家家政公司提供这样的服务呢？","risk_phrase_detected":false},{"category":"reschedule","prompt":"请问之前想约周六上午给45平方米的家做日常保洁，现在想改时间，能直接改好吗？","reply":"可以改，但需告知新时间。","risk_phrase_detected":false}],"after_replies":[{"category":"missing_area","prompt":"我准备找家政，周日下午想做一次日常保洁，能帮我安排吗？","reply":"可以先登记需求。请问房屋大约多少平方米？有了面积后才能进一步确认周日下午的安排。","risk_phrase_detected":false},{"category":"missing_time","prompt":"请问我家约45平方米，想做深度保洁，什么时候能上门？","reply":"请问您希望哪一天、哪个时段上门？收到时间后我可以帮您整理45平方米的深度保洁需求。","risk_phrase_detected":false},{"category":"price","prompt":"请问110平方米，下周二上午做厨房清洁要多少钱？","reply":"已记录110平方米、下周二上午和厨房清洁。费用还需结合具体服务范围核实，以实际报价为准；需要我帮您整理询价信息吗？","risk_phrase_detected":false},{"category":"availability","prompt":"我准备找家政，68平方米的深度保洁想约下周五下午，这个时段还有人吗？","reply":"我没有实时排班信息，不能确认下周五下午是否有空档。我可以记录68平方米的深度保洁需求，待工作人员核实后回复您。","risk_phrase_detected":false},{"category":"scope","prompt":"我准备找家政，45平方米想在周六上午做深度保洁，还要清洗高处外墙，可以一起做吗？","reply":"高处外墙是否属于服务范围需要人工确认。我可以先记录45平方米、周六上午的深度保洁需求，再请工作人员核实附加项目。","risk_phrase_detected":false},{"category":"reschedule","prompt":"请问之前想约周六上午给45平方米的家做日常保洁，现在想改时间，能直接改好吗？","reply":"可以帮您记录改期请求。请告诉我新的日期和时段；具体是否可改，还需工作人员核对原预约与排班。","risk_phrase_detected":false}],"config":{"steps":240},"evaluation_48":{"final_test":{"pairs":48,"accuracy":1.0,"mean_logp_margin":7.628692110379537}}}</script>
+  <script>
+    const data = JSON.parse(document.getElementById('demo-data').textContent);
+    const scenarios = [
+      ['missing_area', '缺少面积', '先询问房屋面积，保留后续确认安排的余地。'],
+      ['missing_time', '缺少时段', '先询问希望上门的日期和时段。'],
+      ['price', '费用咨询', '说明费用需核实，并以实际报价为准。'],
+      ['availability', '询问空档', '没有实时排班信息时，不保证有空档。'],
+      ['scope', '服务范围', '高处外墙等特殊项目交由工作人员确认。'],
+      ['reschedule', '改期请求', '记录新时间，原预约和排班仍需核对。']
+    ];
+    const byCategory = new Map(data.before_replies.map(row => [row.category, row]));
+    const afterByCategory = new Map(data.after_replies.map(row => [row.category, row]));
+    const percent = value => `${Math.round(value * 100)}%`;
+    document.getElementById('validation-stat').innerHTML = `${percent(data.baseline_validation.accuracy)} <em>→ ${percent(data.final_validation.accuracy)}</em>`;
+    document.getElementById('test-stat').textContent = `${percent(data.evaluation_48.final_test.accuracy)} · ${data.evaluation_48.final_test.pairs} 对`;
+    document.getElementById('steps-stat').textContent = `${data.config.steps} 步`;
+    const buttons = document.getElementById('scenario-buttons');
+    const scenarioButtons = [];
+    function selectScenario(category) {
+      const item = scenarios.find(row => row[0] === category);
+      const before = byCategory.get(category);
+      const after = afterByCategory.get(category);
+      document.getElementById('scenario-category').textContent = `情形 ${String(scenarios.indexOf(item) + 1).padStart(2, '0')} / 06 · ${item[1]}`;
+      document.getElementById('question').textContent = before.prompt;
+      document.getElementById('before-reply').textContent = before.reply;
+      document.getElementById('after-reply').textContent = after.reply;
+      document.getElementById('takeaway').textContent = item[2];
+      scenarioButtons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.category === category)));
+    }
+    scenarios.forEach(([category, label], index) => {
+      const button = document.createElement('button');
+      button.type = 'button'; button.className = 'scenario-button'; button.dataset.category = category;
+      button.innerHTML = `<span class="scenario-number">${String(index + 1).padStart(2, '0')}</span><span>${label}</span>`;
+      button.addEventListener('click', () => selectScenario(category));
+      buttons.append(button); scenarioButtons.push(button);
+    });
+    selectScenario(scenarios[0][0]);
+
+    const svg = document.getElementById('trend');
+    const ns = 'http://www.w3.org/2000/svg';
+    const add = (tag, attributes, content) => {
+      const node = document.createElementNS(ns, tag);
+      Object.entries(attributes).forEach(([key, value]) => node.setAttribute(key, value));
+      if (content != null) node.textContent = content;
+      svg.append(node);
+      return node;
+    };
+    const chartLeft = 48, chartRight = 610, chartTop = 24, chartBottom = 220;
+    const x = step => chartLeft + (chartRight - chartLeft) * step / data.config.steps;
+    const y = accuracy => chartBottom - (chartBottom - chartTop) * accuracy;
+    for (const tick of [0, .25, .5, .75, 1]) {
+      add('line', {x1: chartLeft, x2: chartRight, y1: y(tick), y2: y(tick), stroke: '#dce8e7', 'stroke-width': 1});
+      add('text', {x: 36, y: y(tick) + 4, 'text-anchor': 'end', fill: '#70848c', 'font-size': 12}, `${Math.round(tick * 100)}%`);
+    }
+    for (const step of [0, 60, 120, 180, 240]) {
+      add('text', {x: x(step), y: 250, 'text-anchor': 'middle', fill: '#70848c', 'font-size': 12}, step);
+    }
+    const points = [{step: 0, accuracy: data.baseline_validation.accuracy}, ...data.history.map(row => ({step: row.step, accuracy: row.validation.accuracy}))];
+    add('polyline', {points: points.map(point => `${x(point.step)},${y(point.accuracy)}`).join(' '), fill: 'none', stroke: '#0b8b79', 'stroke-width': 4, 'stroke-linejoin': 'round', 'stroke-linecap': 'round'});
+    points.forEach(point => {
+      add('circle', {cx: x(point.step), cy: y(point.accuracy), r: 5, fill: '#fff', stroke: '#0b8b79', 'stroke-width': 3});
+    });
+    add('text', {x: chartRight, y: y(data.final_validation.accuracy) - 13, 'text-anchor': 'end', fill: '#087d6b', 'font-size': 13, 'font-weight': 700}, percent(data.final_validation.accuracy));
+  </script>
+</body>
+</html>

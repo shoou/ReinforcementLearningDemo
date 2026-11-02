@@ -57,17 +57,20 @@
     .road-h::before { left: 0; right: 0; top: 50%; border-top: 2px dashed #dce5e6; }
     .road-v::before { top: 0; bottom: 0; left: 50%; border-left: 2px dashed #dce5e6; }
     .cross { position: absolute; left: calc(50% - 52px); top: calc(50% - 45px); width: 104px; height: 90px; background: #394a5a; z-index: 1; }
+    .cross::before, .cross::after { content: ""; position: absolute; background: #f5f7ef; border-radius: 2px; }
+    .cross::before { left: 0; top: -7px; width: 52px; height: 3px; }
+    .cross::after { right: -7px; top: 45px; width: 3px; height: 45px; }
     .light { position: absolute; z-index: 2; background: #102131; color: #fff; padding: 5px 9px; border-radius: 8px; font-size: 11px; font-weight: 800; white-space: nowrap; box-shadow: 0 3px 9px #15283b44; }
-    .light.ns { top: 14px; left: calc(50% + 63px); }
-    .light.ew { top: calc(50% + 52px); left: 12px; }
+    .light.ns { top: calc(50% - 80px); left: calc(50% + 63px); }
+    .light.ew { top: calc(50% + 52px); left: calc(50% + 63px); }
     .light .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; background: #ef4444; }
     .light.go .dot { background: #22c55e; box-shadow: 0 0 7px #22c55e; }
     .queue-badge { position: absolute; z-index: 2; padding: 6px 9px; border-radius: 8px; background: #ffffffed; color: #263e55; font-size: 12px; font-weight: 800; box-shadow: 0 3px 10px #17243a24; }
     .queue-badge.ns { left: calc(50% - 94px); top: 22px; }
     .queue-badge.ew { right: 16px; top: calc(50% - 75px); }
-    .cars { position: absolute; z-index: 2; display: flex; flex-wrap: wrap; gap: 3px; max-width: 120px; }
-    .cars.ns { width: 24px; left: calc(50% - 37px); top: 9px; flex-direction: column; max-height: 77px; }
-    .cars.ew { right: 12px; top: calc(50% + 10px); max-width: 130px; }
+    .cars { position: absolute; z-index: 2; display: grid; gap: 3px; }
+    .cars.ns { grid-template-columns: repeat(3, 8px); left: calc(50% - 39px); bottom: calc(50% + 52px); }
+    .cars.ew { grid-template-columns: repeat(6, 13px); left: calc(50% + 59px); top: calc(50% + 10px); }
     .car { width: 13px; height: 8px; border-radius: 2px; background: #fbbf24; border: 1px solid #e59c12; }
     .cars.ns .car { width: 8px; height: 13px; }
     .center-mark { position: absolute; z-index: 3; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 48px; height: 48px; display: grid; place-items: center; border-radius: 50%; background: #fff; font-size: 22px; box-shadow: 0 3px 12px #0003; }

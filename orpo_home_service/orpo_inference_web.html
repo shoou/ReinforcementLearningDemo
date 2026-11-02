@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>实时推理 · ORPO 家政预约助手</title>
+  <style>
+    :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; color: #173446; background: #f3f7f7; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    button, textarea { font: inherit; }
+    button { cursor: pointer; }
+    .hero { background: linear-gradient(125deg, #12384b, #14616a 72%, #248779); color: #fff; }
+    .hero-inner { max-width: 1090px; margin: auto; padding: 34px 24px 43px; }
+    .topbar { display: flex; justify-content: space-between; align-items: center; gap: 18px; }
+    .brand { font-size: 13px; font-weight: 800; letter-spacing: .12em; color: #a7eee0; }
+    .topbar a { color: #e2ffff; font-size: 13px; text-decoration: none; border: 1px solid #ffffff5c; border-radius: 999px; padding: 8px 13px; }
+    .topbar a:hover { background: #ffffff1b; }
+    h1 { font-size: clamp(32px, 5vw, 52px); letter-spacing: -.04em; margin: 42px 0 12px; line-height: 1.2; }
+    .hero p { max-width: 690px; color: #d2e9e8; line-height: 1.75; margin: 0; }
+    main { max-width: 1090px; margin: auto; padding: 25px 24px 75px; }
+    .panel, .answer { background: #fff; border: 1px solid #dbe7e7; border-radius: 18px; box-shadow: 0 12px 35px #163f4a0a; }
+    .panel { padding: 28px; }
+    label { display: block; font-weight: 800; margin-bottom: 12px; }
+    textarea { width: 100%; min-height: 140px; resize: vertical; border: 1px solid #b7caca; border-radius: 12px; padding: 16px; color: inherit; line-height: 1.7; background: #fcfefe; }
+    textarea:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid #e6aa59; outline-offset: 2px; }
+    .field-foot { display: flex; justify-content: space-between; gap: 12px; color: #70858e; font-size: 12px; margin-top: 7px; }
+    #counter { white-space: nowrap; flex: 0 0 auto; }
+    .samples { margin-top: 22px; }
+    .samples-title { font-size: 13px; color: #56717b; font-weight: 750; margin-bottom: 11px; }
+    .sample-list { display: flex; flex-wrap: wrap; gap: 8px; }
+    .sample { border: 1px solid #cbe5de; background: #eff9f5; color: #146c5e; border-radius: 999px; padding: 8px 12px; font-size: 13px; font-weight: 700; }
+    .sample:hover { background: #dff3eb; }
+    .actions { display: flex; align-items: center; gap: 15px; margin-top: 25px; flex-wrap: wrap; }
+    .submit { border: 0; border-radius: 10px; padding: 13px 22px; color: white; background: #087e70; font-weight: 800; min-width: 175px; }
+    .submit:hover:not(:disabled) { background: #06695e; }
+    .submit:disabled { opacity: .65; cursor: wait; }
+    .action-note { color: #627984; font-size: 13px; }
+    .status { min-height: 25px; margin: 14px 0 0; color: #9b3d39; font-size: 14px; }
+    .status.loading { color: #146c5e; }
+    .results { margin-top: 30px; }
+    .result-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 15px; }
+    .result-heading h2 { margin: 0; font-size: 24px; }
+    .result-heading span { color: #6b8088; font-size: 13px; }
+    .result-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .answer { padding: 24px; min-height: 230px; }
+    .answer.tuned { border-color: #98d7c8; background: #f6fbf8; }
+    .answer-label { color: #6e838b; font-size: 12px; font-weight: 800; letter-spacing: .08em; }
+    .tuned .answer-label { color: #087e70; }
+    .answer-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.85; font-size: 16px; margin: 21px 0 0; }
+    .answer-time { font-size: 12px; color: #809199; margin-top: 23px; }
+    .note { border-left: 3px solid #85b8af; padding-left: 15px; margin-top: 26px; color: #627780; font-size: 13px; line-height: 1.75; }
+    .note p { margin: 6px 0; }
+    .note a { color: #087e70; }
+    @media (max-width: 660px) { .hero-inner { padding: 25px 18px 36px; } h1 { margin-top: 35px; } main { padding: 18px 16px 55px; } .panel { padding: 19px; } .result-grid { grid-template-columns: 1fr; } .answer { min-height: auto; } .result-heading { display: block; } .result-heading span { display: block; margin-top: 5px; } }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner">
+      <div class="topbar"><span class="brand">ORPO · 家政预约助手</span><a href="orpo_effect_demo.html">查看实验效果 →</a></div>
+      <h1>输入问题，现场比较回复</h1>
+      <p>输入一条家政咨询，系统会用相同的规则提示分别运行基础模型和 ORPO 微调后的模型。两侧文字均由模型现场生成，便于观察偏好训练带来的变化。</p>
+    </div>
+  </header>
+  <main>
+    <section class="panel" aria-label="家政问题输入">
+      <form id="inference-form">
+        <label for="question">你的家政问题</label>
+        <textarea id="question" maxlength="500" required placeholder="例如：我家 68 平方米，周六上午想做深度保洁，现在还有空档吗？"></textarea>
+        <div class="field-foot"><span>请写清服务类型、面积和期望时间；也可以故意省略一项观察回复。</span><span id="counter">0 / 500</span></div>
+        <div class="samples"><div class="samples-title">试试这些情形</div><div class="sample-list" id="sample-list"></div></div>
+        <div class="actions"><button class="submit" id="submit" type="submit">开始推理对比</button><span class="action-note">CPU 推理可能需要几十秒，请等待两侧回复生成。</span></div>
+      </form>
+      <p class="status" id="status" role="status" aria-live="polite"></p>
+    </section>
+    <section class="results" id="results" hidden aria-live="polite">
+      <div class="result-heading"><h2>同一问题，两种回复</h2><span>相同提示 · 贪心生成 · 无随机采样</span></div>
+      <div class="result-grid">
+        <article class="answer"><div class="answer-label">BEFORE · 基础模型</div><p class="answer-text" id="baseline-reply"></p><div class="answer-time" id="baseline-time"></div></article>
+        <article class="answer tuned"><div class="answer-label">AFTER · ORPO 微调后</div><p class="answer-text" id="tuned-reply"></p><div class="answer-time" id="tuned-time"></div></article>
+      </div>
+    </section>
+    <div class="note">
+      <p>本页只调用本机模型，不连接报价、排班或预约系统，也不会创建工单。模型的自由生成结果可能不准确，请勿将其作为实际服务承诺。</p>
+      <p>这里展示推理输出；<a href="orpo_effect_demo.html">效果演示页</a>展示已保存的六类实验回复和评估指标。</p>
+    </div>
+  </main>
+  <script>
+    const examples = [
+      ['缺少面积', '周六上午想做一次厨房清洁，能帮我安排吗？'],
+      ['缺少时段', '我家约68平方米，想做深度保洁，什么时候能上门？'],
+      ['费用咨询', '110平方米，下周二上午做厨房清洁要多少钱？'],
+      ['询问空档', '68平方米的深度保洁想约下周五下午，这个时段还有人吗？'],
+      ['服务范围', '45平方米想在周六上午做深度保洁，还要清洗高处外墙，可以一起做吗？'],
+      ['改期请求', '之前想约周六上午给45平方米的家做日常保洁，现在想改时间，能直接改好吗？']
+    ];
+    const question = document.getElementById('question');
+    const counter = document.getElementById('counter');
+    const status = document.getElementById('status');
+    const results = document.getElementById('results');
+    const submit = document.getElementById('submit');
+    const updateCounter = () => { counter.textContent = `${question.value.length} / 500`; };
+    question.addEventListener('input', updateCounter);
+    for (const [label, value] of examples) {
+      const button = document.createElement('button');
+      button.type = 'button'; button.className = 'sample'; button.textContent = label;
+      button.addEventListener('click', () => { question.value = value; updateCounter(); question.focus(); });
+      document.getElementById('sample-list').append(button);
+    }
+    document.getElementById('inference-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      if (!question.value.trim()) return;
+      submit.disabled = true; submit.textContent = '推理中…';
+      status.className = 'status loading'; status.textContent = '正在依次生成基础模型和 ORPO 模型的回复…';
+      results.hidden = true;
+      try {
+        const response = await fetch('/api/compare', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({question: question.value.trim()})
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '推理失败');
+        document.getElementById('baseline-reply').textContent = data.baseline.reply;
+        document.getElementById('tuned-reply').textContent = data.tuned.reply;
+        document.getElementById('baseline-time').textContent = `生成耗时 ${data.baseline.seconds} 秒`;
+        document.getElementById('tuned-time').textContent = `生成耗时 ${data.tuned.seconds} 秒`;
+        status.textContent = '';
+        results.hidden = false;
+      } catch (error) {
+        status.className = 'status'; status.textContent = error.message || '请求失败，请检查服务是否已启动';
+      } finally {
+        submit.disabled = false; submit.textContent = '开始推理对比';
+      }
+    });
+  </script>
+</body>
+</html>

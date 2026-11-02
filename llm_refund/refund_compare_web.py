@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Lock
@@ -25,6 +26,8 @@ MAX_TICKET_CHARS = 2_000
 class ComparisonModel:
     def __init__(self, model_name: str, adapter_path: str, threads: int):
         ensure_single_openmp()
+        # 只使用 PyTorch，避免 transformers 导入与 NumPy 2 不兼容的 TensorFlow。
+        os.environ["USE_TF"] = "0"
         import torch
         from peft import PeftModel
         from transformers import AutoModelForCausalLM, AutoTokenizer

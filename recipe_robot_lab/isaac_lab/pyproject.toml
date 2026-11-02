@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "recipe-lab-isaac"
+version = "0.1.0"
+description = "Isaac Lab Panda docking task for the recipe robot lab case"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.entry-points."isaaclab.tasks"]
+recipe_lab_isaac = "recipe_lab_isaac"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["recipe_lab_isaac*"]

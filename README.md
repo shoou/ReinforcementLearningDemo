@@ -9,7 +9,9 @@
 | [Actor-Critic 智能信号灯](actor_critic_traffic/Actor-Critic_案例说明.md) | 动态车流控制及交互式展示 | `actor_critic_traffic/actor_critic_traffic.py` |
 | [PPO 冷链调度](ppo_cold_chain/PPO_案例说明.md) | 电池、制冷与车辆充电联合决策 | `ppo_cold_chain/ppo_cold_chain.py` |
 | [大模型售后决策](llm_refund/强化学习_大模型售后决策案例.md) | 单步强化学习微调及网页对比 | `llm_refund/rl_llm_refund.py` |
+| [ORPO 家政预约助手](orpo_home_service/README.md) | CPU 上的偏好优化微调与回复对比 | `orpo_home_service/orpo_home_service.py` |
 | [机械臂分拣](robot_arm_rl/README.md) | 机械臂动作控制与可视化 | `robot_arm_rl/arm_sorting.py` |
+| [配方编译与具身实验](recipe_robot_lab/README.md) | 中文实验协议、PyBullet 机械臂、DQN 微量调整与闭环配方优化 | `recipe_robot_lab/run_case.py` |
 
 例如，运行信号灯案例：
 

@@ -1,7 +1,8 @@
-"""CPU-friendly 0.5B LLM fine-tuning with a one-step contextual-bandit reward.
+"""用单步上下文在 CPU 上微调 0.5B 语言模型完成售后分流。
 
-All orders are synthetic. The model chooses one of four constrained actions;
-the application, not the model, formats the final business decision.
+所有工单均为合成数据。每张工单是一个独立的状态，模型只在 A/B/C/D
+四个动作中选择；动作没有后续状态，因此这里不计算长期回报。
+程序负责把动作代码映射成业务决定，模型不生成自由格式的处理意见。
 """
 
 from __future__ import annotations
@@ -15,9 +16,11 @@ import sys
 from pathlib import Path
 
 
+# 默认模型可由 --model 替换；动作代码必须各自对应 tokenizer 的单个 token。
 MODEL_ID = "Qwen/Qwen2.5-0.5B-Instruct"
 ACTIONS = ("A", "B", "C", "D")
 ACTION_NAMES = {"A": "退款", "B": "补发", "C": "拒绝", "D": "人工复核"}
+# 商品及描述只用于改写工单表面文本；正确动作由下面的结构化事实决定。
 PRODUCTS = (
     ("一只保温杯", "杯盖拧紧后仍会漏水", "杯身和包装都完好"),
     ("一台电热水壶", "通电后指示灯不亮", "机器能正常烧水，外观也没有问题"),
@@ -28,6 +31,7 @@ PRODUCTS = (
     ("一件外套", "袖口的缝线开了", "衣服没有破损，吊牌还在"),
     ("一个双肩包", "肩带的扣具断了", "包没有损坏，标签还在"),
 )
+# 与 oracle 的判断顺序一致：证据和物流问题优先于时效及商品状态。
 RULES = (
     "规则：资料缺失或物流状态矛盾→D；签收超过30天→C；"
     "30天内商品破损→按客户意愿选A退款或B补发；"
@@ -36,6 +40,11 @@ RULES = (
 
 
 def oracle(case: dict) -> str:
+    """按显式业务规则给工单打标签，也作为奖励和评估的标准答案。
+
+    proof 表示核验资料齐全，conflict 表示物流记录与客户描述矛盾。
+    先处理需要人工复核的异常，避免后面的自动退款等规则覆盖它们。
+    """
     if not case["proof"] or case["conflict"]:
         return "D"
     if case["days"] > 30:
@@ -46,7 +55,7 @@ def oracle(case: dict) -> str:
 
 
 def render_ticket(case: dict, rng: random.Random, split: str) -> str:
-    """Compose a customer message and short service notes from the same facts."""
+    """把同一组事实写成客户留言与客服备注，返回一条自然语言工单。"""
     product, defect, intact = rng.choice(PRODUCTS)
     condition = defect if case["damaged"] else intact
     if case["damaged"]:
@@ -65,7 +74,8 @@ def render_ticket(case: dict, rng: random.Random, split: str) -> str:
                             "快递轨迹显示尚未签收，和客户描述对不上")) if case["conflict"] else rng.choice(
                                 ("物流签收记录与客户描述一致", "快递轨迹和收货时间已核对",
                                  "平台显示的签收信息与客户说法相符"))
-    # Separate sentence arrangements and wording pools keep the held-out splits distinct.
+    # 各数据集使用不同句式模板，使验证和测试文本不直接复用训练模板。
+    # split 只改变措辞，不改变 case 所代表的业务事实或标签。
     layouts = {
         "train": (
             f"客户留言：\"买的{product}，{delivery}。{customer}\" 客服备注：{proof}；{logistics}。",
@@ -85,13 +95,18 @@ def render_ticket(case: dict, rng: random.Random, split: str) -> str:
 
 
 def make_cases(seed: int, count: int, split: str) -> list[dict]:
-    """Balanced labels; distinct seeds and wording for train/validation/test."""
+    """生成四类标签近似均衡、文本不重复的合成工单。
+
+    先按目标标签抽样满足规则的事实，再用 oracle 校验。不同数据集使用
+    不同随机种子和文本模板；相同种子则可复现相同数据。
+    """
     rng = random.Random(seed)
     if split not in ("train", "validation", "test"):
         raise ValueError(f"unknown split: {split}")
     cases = []
     seen_text = set()
     for i in range(count):
+        # 轮流指定 A/B/C/D，避免单一类别占据训练或评估数据的大部分。
         label = ACTIONS[i % 4]
         if label == "A":
             damaged = rng.choice([True, False])
@@ -106,10 +121,12 @@ def make_cases(seed: int, count: int, split: str) -> list[dict]:
         else:
             damaged, days = rng.choice([True, False]), rng.randint(1, 50)
             preference = rng.choice(["退款", "补发"]) if damaged else "退款"
+        # D 至少满足“缺资料”或“物流矛盾”之一；其他标签两项均正常。
         proof = label != "D" or rng.random() < 0.5
         conflict = label == "D" and (proof or rng.random() < 0.5)
         case = dict(days=days, damaged=damaged, preference=preference,
                     proof=proof, conflict=conflict)
+        # 仅在当前 split 内去重；遇到碰撞时重新抽样文本措辞。
         for _ in range(100):
             case["text"] = render_ticket(case, rng, split)
             if case["text"] not in seen_text:
@@ -117,6 +134,7 @@ def make_cases(seed: int, count: int, split: str) -> list[dict]:
         else:
             raise RuntimeError("Could not generate enough distinct ticket texts")
         seen_text.add(case["text"])
+        # 生成器的目标标签与业务规则必须一致，否则奖励会自相矛盾。
         assert oracle(case) == label
         cases.append(case)
     rng.shuffle(cases)
@@ -124,7 +142,7 @@ def make_cases(seed: int, count: int, split: str) -> list[dict]:
 
 
 def export_cases(directory: str, seed: int, train_size: int, eval_size: int) -> None:
-    """Write inspectable JSONL datasets without loading the language model."""
+    """导出可检查的 JSONL 数据；此路径不加载模型或训练依赖。"""
     target = Path(directory)
     target.mkdir(parents=True, exist_ok=True)
     for split, offset, size in (("train", 0, train_size),
@@ -140,16 +158,17 @@ def export_cases(directory: str, seed: int, train_size: int, eval_size: int) -> 
 
 
 def reward(case: dict, action: str) -> float:
-    """Reward table independent of the model output format."""
+    """计算单步奖励：正确为 1，普通错误为 -1，漏掉人工复核为 -2。"""
     correct = oracle(case)
     if action == correct:
         return 1.0
     if correct == "D" and action != "D":
-        return -2.0  # dangerous auto-decision when evidence needs review
+        return -2.0  # 证据待核验时自动决策的风险更高，给予更大惩罚。
     return -1.0
 
 
 def prompt(case: dict, tokenizer) -> str:
+    """把规则和工单填入模型的对话模板，并定位到助手开始回答处。"""
     messages = [
         {"role": "system", "content": "你是售后工单分流员。只选一个动作代码，不要解释。"},
         {"role": "user", "content": RULES + "\n" + case["text"] + "\nA退款 B补发 C拒绝 D人工复核。只输出代码："},
@@ -158,6 +177,7 @@ def prompt(case: dict, tokenizer) -> str:
 
 
 def action_token_ids(tokenizer) -> list[int]:
+    """取得四个动作代码的 token ID；多 token 编码无法直接作四分类。"""
     ids = [tokenizer.encode(x, add_special_tokens=False) for x in ACTIONS]
     if any(len(x) != 1 for x in ids):
         raise ValueError("This tokenizer does not encode A/B/C/D as single tokens")
@@ -165,19 +185,22 @@ def action_token_ids(tokenizer) -> list[int]:
 
 
 def action_logits(model, tokenizer, cases: list[dict], token_ids: list[int]):
+    """取每条提示末尾预测下一 token 的分数，并只保留 A/B/C/D。"""
     import torch
     batch = tokenizer([prompt(c, tokenizer) for c in cases], return_tensors="pt",
                       padding=True, truncation=True, max_length=384)
-    # Right-padding is safe because we gather at each row's last actual token.
+    # 批次右侧补齐后，各行最后一个真实 token 的位置不同；不能直接取 logits[:, -1]。
     output = model(**batch, use_cache=False).logits
     ends = batch["attention_mask"].sum(dim=1) - 1
     return output[torch.arange(len(cases)), ends][:, token_ids].float()
 
 
 def evaluate(model, tokenizer, cases: list[dict], token_ids: list[int], batch_size: int) -> dict:
+    """以四选一贪心决策评估准确率、平均奖励和危险自动决策数。"""
     import torch
     model.eval()
     correct = risky = total_reward = 0
+    # 混淆矩阵第一层是真实动作，第二层是模型选择的动作。
     confusion = {a: {b: 0 for b in ACTIONS} for a in ACTIONS}
     with torch.no_grad():
         for start in range(0, len(cases), batch_size):
@@ -194,7 +217,11 @@ def evaluate(model, tokenizer, cases: list[dict], token_ids: list[int], batch_si
 
 
 def ensure_single_openmp() -> None:
-    """On macOS Conda, make OpenBLAS reuse the libomp bundled with pip PyTorch."""
+    """在 macOS Conda 环境中，令 OpenBLAS 复用 pip PyTorch 附带的 libomp。
+
+    只有检测到两份不同的 libomp 且搜索路径尚未包含 PyTorch 版本时才
+    重启当前进程；环境标记用于防止重复重启。
+    """
     if sys.platform != "darwin" or os.environ.get("RL_LLM_OPENMP_REEXEC"):
         return
     spec = importlib.util.find_spec("torch")
@@ -215,7 +242,11 @@ def ensure_single_openmp() -> None:
 
 
 def run(args) -> None:
+    """加载模型、按需训练 LoRA，并保存最佳适配器及评估报告。"""
     ensure_single_openmp()
+    # 本程序只用 PyTorch；避免 transformers 探测并导入环境中的 TensorFlow。
+    # 旧版 TensorFlow 的二进制扩展可能与 NumPy 2 不兼容。
+    os.environ["USE_TF"] = "0"
     import torch
     from peft import LoraConfig, PeftModel, TaskType, get_peft_model
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -224,10 +255,12 @@ def run(args) -> None:
     random.seed(args.seed)
     torch.set_num_threads(args.threads)
     tokenizer = AutoTokenizer.from_pretrained(args.model)
+    # 因果语言模型通常没有独立 pad token；补齐只用于批量前向计算。
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
     token_ids = action_token_ids(tokenizer)
     model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.float32)
+    # 已有适配器只用于评估；新训练仅更新 LoRA 注入的少量参数。
     if args.adapter:
         model = PeftModel.from_pretrained(model, args.adapter, is_trainable=False)
     elif args.steps:
@@ -238,6 +271,7 @@ def run(args) -> None:
     train = make_cases(args.seed, args.train_size, "train")
     valid = make_cases(args.seed + 1, args.eval_size, "validation")
     test = make_cases(args.seed + 2, args.eval_size, "test") if not args.validation_only else None
+    # 训练前基线在验证集上测量；加载已有适配器时不另算基础模型基线。
     baseline = None if args.adapter else evaluate(model, tokenizer, valid, token_ids, args.batch_size)
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
@@ -247,18 +281,23 @@ def run(args) -> None:
         model.train()
         optimizer = torch.optim.AdamW((p for p in model.parameters() if p.requires_grad), lr=args.lr)
         for step in range(1, args.steps + 1):
+            # 按固定顺序循环取样，跨过训练集末尾时从头继续。
             batch = [train[((step - 1) * args.batch_size + i) % len(train)] for i in range(args.batch_size)]
             logits = action_logits(model, tokenizer, batch, token_ids)
+            # 只在四个合法动作上归一化，得到当前策略 pi(a | 工单)。
             log_probs = torch.log_softmax(logits, dim=-1)
+            # 策略网络输出的动作概率分布（例如，当前 Token 的词表概率分布）。
             probs = log_probs.exp()
+            # 环境或奖励模型（Reward Model）给出的每个动作的分数，业务规则给出四个动作各自的奖励。
             rewards = torch.tensor([[reward(c, a) for a in ACTIONS] for c in batch])
-            # Exact contextual-bandit policy objective: -E_{a~pi}[r(s,a)].
-            # Enumerating four actions removes sampling variance; entropy aids exploration.
+            # 最大化 E_{a~pi}[r(s,a)]：逐项相乘后求和，是精确的单步期望奖励。
             expected_reward = (probs * rewards).sum(dim=-1).mean()
+            # 熵项鼓励策略保留一定分散度；梯度只通过 probs 回传到 LoRA 参数。
             entropy = -(probs * log_probs).sum(dim=-1).mean()
             loss = -expected_reward - args.entropy * entropy
             optimizer.zero_grad()
             loss.backward()
+            # 限制梯度范数，减少偶发的大幅参数更新。
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
             if step == 1 or step % args.eval_every == 0 or step == args.steps:
@@ -266,11 +305,13 @@ def run(args) -> None:
                 row = {"step": step, "loss": float(loss.detach()), "validation": metrics}
                 history.append(row)
                 print(json.dumps(row, ensure_ascii=False))
+                # 先比较验证集平均奖励，再用准确率打破平局。
                 if best_valid is None or (metrics["mean_reward"], metrics["accuracy"]) > best_valid:
                     best_valid = (metrics["mean_reward"], metrics["accuracy"])
                     model.save_pretrained(output / "adapter")
                 model.train()
-        # Test only the validation-selected checkpoint.
+        # 重新加载验证集选中的最佳权重，再对测试集作最终评估。
+        # --validation-only 时 test 为 None，不会读取或评估测试集。
         del model
         model = PeftModel.from_pretrained(
             AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.float32),
@@ -290,6 +331,7 @@ def run(args) -> None:
 
 
 def main() -> None:
+    """解析命令行；导出数据与加载模型训练是两条独立执行路径。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", default=MODEL_ID, help="Hugging Face ID or local model directory")
     parser.add_argument("--export-data", help="Write train/validation/test JSONL and exit; no model download")

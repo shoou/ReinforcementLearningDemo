@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import math
 import os
 import random
 from collections import deque
@@ -28,6 +27,41 @@ WALLS = {
 ACTIONS = ((-1, 0), (1, 0), (0, -1), (0, 1))  # 上、下、左、右
 
 
+def goal_distances() -> dict[tuple[int, int], int]:
+    """计算每个可达格到终点的最短距离，供奖励塑形和课程训练使用。"""
+    distances = {GOAL: 0}
+    queue = deque([GOAL])
+    while queue:
+        row, col = queue.popleft()
+        for dr, dc in ACTIONS:
+            point = (row + dr, col + dc)
+            if (0 <= point[0] < SIZE and 0 <= point[1] < SIZE
+                    and point not in WALLS and point not in distances):
+                distances[point] = distances[(row, col)] + 1
+                queue.append(point)
+    return distances
+
+
+DISTANCES = goal_distances()
+
+
+def training_route() -> list[tuple[int, int]]:
+    """得到一条可行的最短路线，用于从近到远安排训练起点。"""
+    if START not in DISTANCES:
+        raise ValueError("起点无法到达终点")
+    route = [START]
+    while route[-1] != GOAL:
+        row, col = route[-1]
+        route.append(next(
+            (row + dr, col + dc) for dr, dc in ACTIONS
+            if DISTANCES.get((row + dr, col + dc)) == DISTANCES[(row, col)] - 1
+        ))
+    return route
+
+
+TRAINING_ROUTE = training_route()
+
+
 class GridWorld:
     """固定地图的寻路环境，接口仿照强化学习常见的 reset/step。"""
 
@@ -35,17 +69,25 @@ class GridWorld:
         self.max_steps = max_steps
         self.reset()
 
-    def reset(self) -> np.ndarray:
-        """开始新回合，返回起点对应的状态向量。"""
-        self.position = START
+    def reset(self, start: tuple[int, int] = START) -> np.ndarray:
+        """开始新回合；训练可从路线中途开始，评估始终从起点开始。"""
+        if start not in DISTANCES:
+            raise ValueError("训练起点必须是可到达终点的空格")
+        self.position = start
         self.steps = 0
         return self.state()
 
     def state(self) -> np.ndarray:
-        # 固定地图中位置的 one-hot 编码；网络输入维度随地图大小变化。
-        state = np.zeros(SIZE * SIZE, dtype=np.float32)
-        state[self.position[0] * SIZE + self.position[1]] = 1.0
-        return state
+        # 坐标和四个方向的可通行性、最短距离变化，让网络能在不同位置复用经验。
+        row, col = self.position
+        features = [row / (SIZE - 1), col / (SIZE - 1)]
+        for dr, dc in ACTIONS:
+            neighbor = (row + dr, col + dc)
+            features.append(float(DISTANCES[self.position] - DISTANCES[neighbor])
+                            if neighbor in DISTANCES else 0.0)
+        for dr, dc in ACTIONS:
+            features.append(float((row + dr, col + dc) in DISTANCES))
+        return np.asarray(features, dtype=np.float32)
 
     def step(self, action: int) -> tuple[np.ndarray, float, bool, bool]:
         """执行一个动作，返回（新状态、奖励、是否结束、是否到达目标）。"""
@@ -53,14 +95,16 @@ class GridWorld:
         col = self.position[1] + ACTIONS[action][1]
         candidate = (row, col)
         # 撞墙或越界时保持原地，但仍消耗一步，并给予较大的负奖励。
-        valid = 0 <= row < SIZE and 0 <= col < SIZE and candidate not in WALLS
+        valid = candidate in DISTANCES
+        previous_distance = DISTANCES[self.position]
         if valid:
             self.position = candidate
         self.steps += 1
         success = self.position == GOAL
         done = success or self.steps >= self.max_steps
-        # 每走一步有小惩罚，鼓励智能体尽快到达终点。
-        reward = 2.0 if success else (-0.12 if not valid else -0.04)
+        # 实际绕墙距离缩短时给予反馈，避免长路线中始终得不到目标信号。
+        reward = 10.0 if success else (-1.2 if not valid else
+                                        -0.01 + (previous_distance - DISTANCES[self.position]))
         return self.state(), reward, done, success
 
 
@@ -71,7 +115,7 @@ class QNetwork(torch.nn.Module):
         super().__init__()
         # 两层隐藏层；最后一层不做激活，因为 Q 值可以为负数。
         self.layers = torch.nn.Sequential(
-            torch.nn.Linear(SIZE * SIZE, 64),
+            torch.nn.Linear(10, 64),
             torch.nn.ReLU(),
             torch.nn.Linear(64, 64),
             torch.nn.ReLU(),
@@ -97,7 +141,7 @@ def learn(
     replay: deque,
     optimizer: torch.optim.Optimizer,
     batch_size: int = 64,
-    gamma: float = 0.95,
+    gamma: float = 0.99,
 ) -> float:
     """从经验回放池采样一批转移，执行一次 DQN 参数更新。"""
     # 每条经验是 (s, a, r, s', done)；随机采样可打散相邻步的相关性。
@@ -127,7 +171,7 @@ def learn(
 
 def train(episodes: int, seed: int) -> tuple[QNetwork, dict[str, list[float]]]:
     """训练智能体，同时记录用于绘制曲线的奖励、成功率等指标。"""
-    # 固定随机种子，便于课堂演示时复现相近的训练结果。
+    # 固定随机种子，便于复现相近的训练结果。
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -136,16 +180,25 @@ def train(episodes: int, seed: int) -> tuple[QNetwork, dict[str, list[float]]]:
     # online 负责学习，target 负责计算相对稳定的训练目标。
     online, target = QNetwork(), QNetwork()
     target.load_state_dict(online.state_dict())
-    optimizer = torch.optim.Adam(online.parameters(), lr=0.001)
-    # 回放池只保留最近 10,000 条经验，满后自动丢弃最早的经验。
-    replay: deque = deque(maxlen=10_000)
+    optimizer = torch.optim.Adam(online.parameters(), lr=0.0003)
+    # 回放池只保留最近 20,000 条经验，满后自动丢弃最早的经验。
+    replay: deque = deque(maxlen=20_000)
     history: dict[str, list[float]] = {"reward": [], "success": [], "epsilon": [], "loss": []}
     updates = 0
 
     for episode in range(episodes):
-        state = environment.reset()
-        # ε 从 1 指数衰减并逐渐接近 0.05：前期多探索，后期多利用。
-        epsilon = 0.05 + 0.95 * math.exp(-episode / 95)
+        progress = episode / max(1, episodes - 1)
+        # 先从目标附近学习短路线，再逐渐延长；最后阶段固定从地图起点训练。
+        if progress < 0.65:
+            max_distance = min(len(TRAINING_ROUTE) - 1,
+                               8 + int(progress / 0.65 * (len(TRAINING_ROUTE) - 1)))
+            start_index = random.randint(len(TRAINING_ROUTE) - 1 - max_distance,
+                                         len(TRAINING_ROUTE) - 2)
+            state = environment.reset(TRAINING_ROUTE[start_index])
+        else:
+            state = environment.reset()
+        # 探索率随总训练回合数线性下降，保留 0.1 的随机探索。
+        epsilon = max(0.1, 1.0 - 0.9 * progress / 0.8)
         total_reward = 0.0
         episode_losses = []
         for _ in range(environment.max_steps):
@@ -155,12 +208,12 @@ def train(episodes: int, seed: int) -> tuple[QNetwork, dict[str, list[float]]]:
             replay.append((state, action, reward, next_state, done))
             state = next_state
             total_reward += reward
-            # 经验足够组成一批后，每与环境交互一步就更新一次在线网络。
-            if len(replay) >= 64:
+            # 每四步更新一次，降低大地图训练的计算量。
+            if len(replay) >= 64 and environment.steps % 4 == 0:
                 episode_losses.append(learn(online, target, replay, optimizer))
                 updates += 1
-                # 目标网络每 150 次梯度更新才同步一次在线网络的参数。
-                if updates % 150 == 0:
+                # 目标网络每 500 次梯度更新才同步一次在线网络的参数。
+                if updates % 500 == 0:
                     target.load_state_dict(online.state_dict())
             if done:
                 break
